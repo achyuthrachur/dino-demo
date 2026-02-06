@@ -35,6 +35,9 @@ interface ExhibitState {
   isCompareDrawerOpen: boolean;
   compareTargetId: string | null;
 
+  // Animation
+  animationAction: 'Idle' | 'Roar' | 'Walk';
+
   // Camera
   cameraTarget: 'idle' | 'head' | 'claw';
 
@@ -51,6 +54,7 @@ interface ExhibitState {
   setPresenterConfidence: (confidence: number) => void;
   openCompareDrawer: (targetId: string) => void;
   closeCompareDrawer: () => void;
+  setAnimationAction: (action: 'Idle' | 'Roar' | 'Walk') => void;
   setCameraTarget: (target: 'idle' | 'head' | 'claw') => void;
   focusBone: (boneName: string) => void;
   clearBoneFocus: () => void;
@@ -72,6 +76,7 @@ const initialState = {
   isBoneFocusActive: false,
   boneFocusExplodeFactor: 0,
   dataMode: 'museum' as DataMode,
+  animationAction: 'Idle' as const,
   presenterActive: false,
   presenterConfidence: 0,
   isCompareDrawerOpen: false,
@@ -184,6 +189,15 @@ export const useExhibitStore = create<ExhibitState>((set, get) => ({
     set({
       isCompareDrawerOpen: false,
       compareTargetId: null,
+    }),
+
+  // ---------------------------------------------------------------------------
+  // Animation Actions
+  // ---------------------------------------------------------------------------
+
+  setAnimationAction: (action) =>
+    set({
+      animationAction: action,
     }),
 
   // ---------------------------------------------------------------------------

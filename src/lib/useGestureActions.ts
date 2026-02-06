@@ -47,12 +47,14 @@ export function useGestureActions(
   const setExplodeFactor = useExhibitStore((state) => state.setExplodeFactor);
   const cycleScanMode = useExhibitStore((state) => state.cycleScanMode);
   const toggleCallouts = useExhibitStore((state) => state.toggleCallouts);
+  const setAnimationAction = useExhibitStore((state) => state.setAnimationAction);
 
   // Refs to track state across frames
   const lastZoomValue = useRef<number | null>(null);
   const lastExplodeValue = useRef<number | null>(null);
   const peaceSignCooldown = useRef(false);
   const palmHoldTriggered = useRef(false);
+  const roarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset tracking refs
   const reset = useCallback(() => {
@@ -159,16 +161,22 @@ export function useGestureActions(
           break;
 
         // -----------------------------------------------------------------
-        // Peace Sign -> Cycle Scan Mode
+        // Peace Sign -> Trigger Roar Animation (5 sec then revert to Idle)
         // -----------------------------------------------------------------
         case 'peace_sign':
           if (!peaceSignCooldown.current) {
-            cycleScanMode();
+            setAnimationAction('Roar');
             peaceSignCooldown.current = true;
-            // Prevent rapid cycling
-            setTimeout(() => {
+
+            // Clear any existing roar timeout
+            if (roarTimeoutRef.current) clearTimeout(roarTimeoutRef.current);
+
+            // Revert to Idle after 5 seconds
+            roarTimeoutRef.current = setTimeout(() => {
+              setAnimationAction('Idle');
               peaceSignCooldown.current = false;
-            }, 1000);
+              roarTimeoutRef.current = null;
+            }, 5000);
           }
           break;
 
@@ -186,6 +194,7 @@ export function useGestureActions(
       setExplodeFactor,
       cycleScanMode,
       toggleCallouts,
+      setAnimationAction,
     ]
   );
 

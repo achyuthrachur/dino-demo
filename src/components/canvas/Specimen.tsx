@@ -6,7 +6,7 @@
 
 import { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF, Html, Center, useCursor } from '@react-three/drei';
+import { useGLTF, useAnimations, Html, Center, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
 import type { SpecimenData, BoneMetadata } from '@/lib/types';
 import { useExhibitStore } from '@/lib/store';
@@ -227,11 +227,13 @@ interface ModelSpecimenProps {
 
 function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene } = useGLTF(modelUrl);
+  const { scene, animations } = useGLTF(modelUrl);
+  const { actions, mixer } = useAnimations(animations, groupRef);
 
   const explodeFactor = useExhibitStore((state) => state.explodeFactor);
   const showCallouts = useExhibitStore((state) => state.showCallouts);
   const scanMode = useExhibitStore((state) => state.scanMode);
+  const animationAction = useExhibitStore((state) => state.animationAction);
 
   // Discovered bones from the model
   const [discoveredBones, setDiscoveredBones] = useState<Map<string, DiscoveredBone>>(new Map());
@@ -346,6 +348,39 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
       fresnelMaterial.uniforms.uTime.value = t;
     }
   });
+
+  // Animation control - cross-fade between clips based on store action
+  useEffect(() => {
+    if (!actions || Object.keys(actions).length === 0) return;
+
+    // The rigged model has a single clip "Take 01"
+    // Map animation actions to playback behavior
+    const clipName = Object.keys(actions)[0]; // Use first available clip
+    const action = actions[clipName];
+    if (!action) return;
+
+    switch (animationAction) {
+      case 'Roar':
+        action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.5).play();
+        action.clampWhenFinished = true;
+        action.setLoop(THREE.LoopOnce, 1);
+        break;
+      case 'Walk':
+        action.reset().setEffectiveTimeScale(0.6).setEffectiveWeight(1).fadeIn(0.5).play();
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        break;
+      case 'Idle':
+      default:
+        // Slow breathing-like loop
+        action.reset().setEffectiveTimeScale(0.15).setEffectiveWeight(0.5).fadeIn(0.8).play();
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        break;
+    }
+
+    return () => {
+      action.fadeOut(0.5);
+    };
+  }, [animationAction, actions]);
 
   // Apply scan mode materials (using custom shaders)
   useEffect(() => {

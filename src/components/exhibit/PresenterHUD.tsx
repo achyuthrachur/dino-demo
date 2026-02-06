@@ -92,7 +92,7 @@ function GestureInstructions({ currentGesture }: { currentGesture: string | null
     { gesture: 'Two-hand Pinch', action: 'Zoom', icon: '🤏', id: 'pinch_spread' },
     { gesture: 'Open Palms', action: 'Explode', icon: '🖐️', id: 'open_palms' },
     { gesture: 'Two Fists', action: 'Pan', icon: '✊', id: 'closed_fists' },
-    { gesture: 'Peace Sign', action: 'Scan Mode', icon: '✌️', id: 'peace_sign' },
+    { gesture: 'Peace Sign', action: 'Roar!', icon: '✌️', id: 'peace_sign' },
     { gesture: 'Palm Hold', action: 'Callouts', icon: '✋', id: 'palm_hold' },
   ];
 
