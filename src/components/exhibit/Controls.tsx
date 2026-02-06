@@ -253,7 +253,7 @@ const PresenterToggle = memo(function PresenterToggle() {
           variant={presenterActive ? 'default' : 'outline'}
           size="sm"
           onClick={() => setPresenterActive(!presenterActive)}
-          className={presenterActive ? 'bg-accent text-accent-foreground' : 'glass'}
+          className={presenterActive ? 'bg-accent text-accent-foreground glow-accent' : 'glass btn-neon-hover'}
           aria-label={presenterActive ? 'Disable gesture controls' : 'Enable gesture controls'}
           aria-pressed={presenterActive}
         >
@@ -275,7 +275,7 @@ const PresenterToggle = memo(function PresenterToggle() {
 export function Controls() {
   return (
     <nav
-      className="glass-strong rounded-xl p-3 sm:p-4"
+      className="glass-strong rounded-xl p-3 sm:p-4 border-t border-t-white/5"
       role="toolbar"
       aria-label="Exhibit controls"
     >

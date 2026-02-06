@@ -130,25 +130,34 @@ function GestureInstructions({ currentGesture }: { currentGesture: string | null
 // Hand Landmark Drawing
 // -----------------------------------------------------------------------------
 
+// Particle trail buffer for holographic effect
+const TRAIL_LENGTH = 8;
+const trailBuffers: Map<number, Array<{ x: number; y: number }>> = new Map();
+
 function drawHandLandmarks(
   ctx: CanvasRenderingContext2D,
   hands: DetectedHand[],
   width: number,
   height: number
 ) {
-  // Clear canvas
-  ctx.clearRect(0, 0, width, height);
+  // Clear with slight fade for trail effect
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = 'source-over';
 
-  const colors = ['#f59e0b', '#6b8f71']; // Warm orange and scientific green
+  const neonColors = ['#f59e0b', '#84cc16']; // Neon amber and neon acid
 
   hands.forEach((hand, handIndex) => {
-    const color = colors[handIndex % colors.length];
+    const color = neonColors[handIndex % neonColors.length];
     const landmarks = hand.landmarks;
 
-    // Draw connections
+    // Draw neon connections with glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
 
     HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
       const start = landmarks[startIdx];
@@ -156,52 +165,122 @@ function drawHandLandmarks(
 
       if (start && end) {
         ctx.beginPath();
-        // Mirror X coordinate for selfie view
         ctx.moveTo((1 - start.x) * width, start.y * height);
         ctx.lineTo((1 - end.x) * width, end.y * height);
         ctx.stroke();
       }
     });
 
-    // Draw landmarks
-    landmarks.forEach((landmark, index) => {
-      // Larger dots for fingertips
-      const isTip = [4, 8, 12, 16, 20].includes(index);
-      const radius = isTip ? 6 : 3;
+    // Draw fingertip particle trails
+    const fingertipIndices = [4, 8, 12, 16, 20];
+    fingertipIndices.forEach((tipIdx) => {
+      const tip = landmarks[tipIdx];
+      if (!tip) return;
 
+      const trailKey = handIndex * 100 + tipIdx;
+      if (!trailBuffers.has(trailKey)) {
+        trailBuffers.set(trailKey, []);
+      }
+      const trail = trailBuffers.get(trailKey)!;
+
+      const tx = (1 - tip.x) * width;
+      const ty = tip.y * height;
+      trail.push({ x: tx, y: ty });
+      if (trail.length > TRAIL_LENGTH) trail.shift();
+
+      // Draw trail particles (fading)
+      trail.forEach((point, i) => {
+        const alpha = (i / trail.length) * 0.6;
+        const radius = (i / trail.length) * 4 + 1;
+
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.shadowBlur = 12;
+        ctx.fill();
+      });
+
+      // Draw bright fingertip dot
+      ctx.beginPath();
+      ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 16;
+      ctx.fill();
+
+      // Outer ring pulse
+      ctx.beginPath();
+      ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.4;
+      ctx.stroke();
+    });
+
+    // Draw non-fingertip landmarks (smaller, dimmer)
+    landmarks.forEach((landmark, index) => {
+      if (fingertipIndices.includes(index)) return;
       ctx.beginPath();
       ctx.arc(
-        (1 - landmark.x) * width, // Mirror X for selfie view
+        (1 - landmark.x) * width,
         landmark.y * height,
-        radius,
+        2,
         0,
         Math.PI * 2
       );
-
-      if (isTip) {
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 1;
-        ctx.fill();
-      } else {
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.6;
-        ctx.fill();
-      }
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.4;
+      ctx.shadowBlur = 4;
+      ctx.fill();
     });
 
-    // Draw handedness label
+    // Draw connector line from palm center to model center (top of canvas)
+    const palmBase = landmarks[0]; // wrist
+    const middleFinger = landmarks[9]; // middle finger base
+    if (palmBase && middleFinger) {
+      const palmX = (1 - (palmBase.x + middleFinger.x) / 2) * width;
+      const palmY = ((palmBase.y + middleFinger.y) / 2) * height;
+
+      // Draw holographic connector line to model
+      const gradient = ctx.createLinearGradient(palmX, palmY, width / 2, 0);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(1, 'transparent');
+
+      ctx.beginPath();
+      ctx.moveTo(palmX, palmY);
+      ctx.lineTo(width / 2, 0);
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.3;
+      ctx.shadowBlur = 6;
+      ctx.setLineDash([4, 8]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw handedness label with neon glow
+    ctx.shadowBlur = 6;
     ctx.fillStyle = color;
     ctx.globalAlpha = 1;
-    ctx.font = '12px monospace';
+    ctx.font = '10px "JetBrains Mono", monospace';
     const wrist = landmarks[0];
     if (wrist) {
       ctx.fillText(
-        hand.handedness,
+        hand.handedness.toUpperCase(),
         (1 - wrist.x) * width - 20,
         wrist.y * height + 20
       );
     }
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
   });
+
+  // Clean up trails for hands no longer detected
+  if (hands.length === 0) {
+    trailBuffers.clear();
+  }
 }
 
 // -----------------------------------------------------------------------------

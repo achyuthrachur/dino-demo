@@ -4,14 +4,30 @@
 // SpecimenSelector.tsx - Specimen Carousel/Tabs (with Accessibility)
 // =============================================================================
 
-import { useEffect, useRef, useCallback, memo } from 'react';
-import { animate, stagger, createScope } from 'animejs';
+import { useRef, useCallback, memo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useExhibitStore } from '@/lib/store';
 import { RAPTORS, getSpecimenById } from '@/lib/registry';
-import { useReducedMotion } from '@/lib/useReducedMotion';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import type { SpecimenData } from '@/lib/types';
+
+// -----------------------------------------------------------------------------
+// Framer Motion Variants
+// -----------------------------------------------------------------------------
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 }
+  }
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, scale: 0.8 },
+  show: { opacity: 1, scale: 1, transition: { type: 'spring' as const, stiffness: 300, damping: 25 } }
+};
 
 // -----------------------------------------------------------------------------
 // Specimen Card (Memoized)
@@ -35,16 +51,19 @@ const SpecimenCard = memo(function SpecimenCard({
   total,
 }: SpecimenCardProps) {
   return (
-    <button
+    <motion.button
       onClick={onClick}
       onKeyDown={onKeyDown}
       className={cn(
         'specimen-card relative flex flex-col items-center p-3 rounded-lg transition-all duration-300',
-        'hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         isSelected
           ? 'glass-strong ring-2 ring-accent'
           : 'glass hover:glass-strong'
       )}
+      variants={cardVariants}
+      whileHover={{ scale: 1.08, boxShadow: '0 0 15px rgba(245, 158, 11, 0.3)' }}
+      whileTap={{ scale: 0.95 }}
       aria-label={`${specimen.displayName} specimen`}
       aria-pressed={isSelected}
       aria-describedby={`specimen-desc-${specimen.id}`}
@@ -92,7 +111,7 @@ const SpecimenCard = memo(function SpecimenCard({
           aria-hidden="true"
         />
       )}
-    </button>
+    </motion.button>
   );
 });
 
@@ -104,24 +123,6 @@ function RaptorCarousel() {
   const carouselRef = useRef<HTMLDivElement>(null);
   const selectedSpecimenId = useExhibitStore((state) => state.selectedSpecimenId);
   const setSelectedSpecimen = useExhibitStore((state) => state.setSelectedSpecimen);
-  const prefersReducedMotion = useReducedMotion();
-
-  // Entrance animation
-  useEffect(() => {
-    if (!carouselRef.current || prefersReducedMotion) return;
-
-    const scope = createScope({ root: carouselRef.current }).add(() => {
-      animate('.specimen-card', {
-        opacity: [0, 1],
-        scale: [0.8, 1],
-        duration: 400,
-        delay: stagger(80, { from: 'first' }),
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [prefersReducedMotion]);
 
   // Keyboard navigation
   const handleKeyDown = useCallback(
@@ -166,12 +167,16 @@ function RaptorCarousel() {
   const currentIndex = RAPTORS.findIndex((s) => s.id === selectedSpecimenId);
 
   return (
-    <div
+    <motion.div
       ref={carouselRef}
       className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"
       role="listbox"
       aria-label="Raptor specimens"
       aria-activedescendant={selectedSpecimenId ? `specimen-${selectedSpecimenId}` : undefined}
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      key="raptor-carousel"
     >
       {RAPTORS.map((specimen, index) => (
         <SpecimenCard
@@ -184,7 +189,7 @@ function RaptorCarousel() {
           total={RAPTORS.length}
         />
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -263,7 +268,29 @@ export function SpecimenSelector() {
 
         {/* Content */}
         <div className="min-h-[100px]" role="region" aria-live="polite">
-          {activeTab === 'raptors' ? <RaptorCarousel /> : <TRexSection />}
+          <AnimatePresence mode="wait">
+            {activeTab === 'raptors' ? (
+              <motion.div
+                key="raptors"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              >
+                <RaptorCarousel />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="trex"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              >
+                <TRexSection />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </Tabs>
 

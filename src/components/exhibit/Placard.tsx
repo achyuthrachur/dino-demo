@@ -4,10 +4,28 @@
 // Placard.tsx - Cinematic Text Panels
 // =============================================================================
 
-import { useEffect, useRef } from 'react';
-import { animate, stagger, createScope } from 'animejs';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { SpecimenData } from '@/lib/types';
 import { useExhibitStore } from '@/lib/store';
+
+// -----------------------------------------------------------------------------
+// Animation Variants
+// -----------------------------------------------------------------------------
+
+const placardVariants = {
+  hidden: { opacity: 0, y: 30 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] as const, staggerChildren: 0.1 }
+  },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.3 } }
+} as const;
+
+const itemVariants = {
+  hidden: { opacity: 0, x: -20 },
+  show: { opacity: 1, x: 0, transition: { type: 'spring' as const, stiffness: 300, damping: 25 } }
+};
 
 // -----------------------------------------------------------------------------
 // Types
@@ -83,39 +101,27 @@ function StatsDisplay({ specimen }: PlacardProps) {
 // -----------------------------------------------------------------------------
 
 function FactsSection({ specimen }: PlacardProps) {
-  const listRef = useRef<HTMLUListElement>(null);
-
-  useEffect(() => {
-    if (!listRef.current) return;
-
-    const scope = createScope({ root: listRef.current }).add(() => {
-      animate('li', {
-        opacity: [0, 1],
-        translateX: [-20, 0],
-        duration: 500,
-        delay: stagger(100, { from: 'first' }),
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [specimen.id]);
-
   return (
     <div className="mt-6">
       <h3 className="font-mono text-xs text-accent uppercase tracking-wider mb-3">
         Did You Know?
       </h3>
-      <ul ref={listRef} className="space-y-2">
+      <motion.ul
+        variants={{ show: { transition: { staggerChildren: 0.1 } } }}
+        initial="hidden"
+        animate="show"
+        className="space-y-2"
+      >
         {specimen.content.facts.slice(0, 3).map((fact, i) => (
-          <li
+          <motion.li
             key={i}
+            variants={itemVariants}
             className="font-body text-sm text-muted-foreground leading-relaxed pl-4 border-l-2 border-accent/30"
           >
             {fact}
-          </li>
+          </motion.li>
         ))}
-      </ul>
+      </motion.ul>
     </div>
   );
 }
@@ -151,31 +157,16 @@ function MythsSection({ specimen }: PlacardProps) {
 // -----------------------------------------------------------------------------
 
 export function Placard({ specimen }: PlacardProps) {
-  const placardRef = useRef<HTMLDivElement>(null);
-
-  // Entrance animation
-  useEffect(() => {
-    if (!placardRef.current) return;
-
-    const scope = createScope({ root: placardRef.current }).add(() => {
-      animate('.placard-content', {
-        opacity: [0, 1],
-        translateY: [30, 0],
-        duration: 700,
-        delay: 100,
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [specimen.id]);
-
   return (
-    <div
-      ref={placardRef}
-      className="glass-strong rounded-xl p-6 max-w-sm w-full"
-    >
-      <div className="placard-content">
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={specimen.id}
+        className="glass-strong rounded-xl p-6 max-w-sm w-full"
+        variants={placardVariants}
+        initial="hidden"
+        animate="show"
+        exit="exit"
+      >
         {/* Header */}
         <div className="border-b border-border pb-4">
           <h1
@@ -204,7 +195,7 @@ export function Placard({ specimen }: PlacardProps) {
             {specimen.content.sources.length} sources cited
           </span>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }

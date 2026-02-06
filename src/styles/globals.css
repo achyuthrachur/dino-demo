@@ -15,34 +15,43 @@
   --font-body: 'Manrope', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 
-  /* Colors - Paleontological Noir */
-  --color-background: #0c0a09;
+  /* Colors - Neon Paleontology / Cyberpunk Archive */
+  --color-background: #050505;
   --color-foreground: #f2f2f0;
   --color-muted: #78716c;
   --color-muted-foreground: #a8a29e;
 
-  --color-card: rgb(28 25 23 / 0.8);
+  --color-card: rgb(18 16 15 / 0.85);
   --color-card-foreground: #f2f2f0;
 
-  --color-border: rgb(255 255 255 / 0.08);
-  --color-input: rgb(255 255 255 / 0.08);
-  --color-ring: #d97706;
+  --color-border: rgb(255 255 255 / 0.1);
+  --color-input: rgb(255 255 255 / 0.1);
+  --color-ring: #f59e0b;
 
-  /* Brand Colors */
+  /* Brand Colors - Neon Energy */
   --color-brand: #e7e5e4;
   --color-brand-muted: #57534e;
-  --color-accent: #d97706;
-  --color-accent-foreground: #0c0a09;
+  --color-accent: #f59e0b;
+  --color-accent-foreground: #050505;
+
+  /* Neon Accent Spectrum */
+  --color-neon-amber: #f59e0b;
+  --color-neon-blue: #0ea5e9;
+  --color-neon-acid: #84cc16;
+  --color-neon-danger: #ef4444;
 
   /* Functional Colors */
-  --color-scientific: #65a30d;
+  --color-scientific: #84cc16;
   --color-laser: #ef4444;
-  --color-success: #6b8f71;
-  --color-warning: #c9a962;
-  --color-error: #b07070;
+  --color-info: #0ea5e9;
+  --color-success: #84cc16;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
 
   /* Glass Effect */
-  --color-hud-glass: rgb(12 10 9 / 0.6);
+  --color-glass-surface: rgb(255 255 255 / 0.05);
+  --color-glass-border: rgb(255 255 255 / 0.1);
+  --color-hud-glass: rgb(5 5 5 / 0.7);
 
   /* Spacing */
   --space-1: 0.25rem;
@@ -66,7 +75,11 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -1px rgb(0 0 0 / 0.04);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -2px rgb(0 0 0 / 0.04);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 10px 10px -5px rgb(0 0 0 / 0.03);
-  --shadow-glow: 0 0 20px rgb(217 119 6 / 0.3);
+  --shadow-glow: 0 0 20px rgb(245 158 11 / 0.3);
+  --shadow-neon: 0 0 20px var(--color-neon-amber);
+  --shadow-neon-blue: 0 0 20px rgb(14 165 233 / 0.3);
+  --shadow-neon-acid: 0 0 20px rgb(132 204 22 / 0.3);
+  --shadow-neon-danger: 0 0 20px rgb(239 68 68 / 0.3);
 
   /* Animation Timing */
   --duration-instant: 75ms;
@@ -179,16 +192,30 @@ body {
    ============================================ */
 .glass {
   background: var(--color-hud-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
 .glass-strong {
-  background: rgb(12 10 9 / 0.8);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(5 5 5 / 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 4px 30px rgb(0 0 0 / 0.5);
+}
+
+.glass-neon {
+  background: var(--color-hud-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgb(245 158 11 / 0.2);
+  box-shadow:
+    inset 0 1px 0 rgb(245 158 11 / 0.05),
+    0 0 15px rgb(245 158 11 / 0.1);
 }
 
 /* ============================================
@@ -238,15 +265,60 @@ body {
    Glow Effects
    ============================================ */
 .glow-accent {
-  box-shadow: 0 0 20px rgb(217 119 6 / 0.3);
+  box-shadow: 0 0 20px rgb(245 158 11 / 0.35);
 }
 
 .glow-scientific {
-  box-shadow: 0 0 20px rgb(101 163 13 / 0.3);
+  box-shadow: 0 0 20px rgb(132 204 22 / 0.35);
 }
 
 .glow-laser {
-  box-shadow: 0 0 20px rgb(239 68 68 / 0.3);
+  box-shadow: 0 0 20px rgb(239 68 68 / 0.35);
+}
+
+.glow-info {
+  box-shadow: 0 0 20px rgb(14 165 233 / 0.35);
+}
+
+/* ============================================
+   Button Hover Effects - "Glitch" & "Glow"
+   (PRD: Buttons should have a "glitch" or "glow"
+   effect on hover, not just a color change)
+   ============================================ */
+@keyframes btn-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgb(245 158 11 / 0.2), inset 0 0 8px rgb(245 158 11 / 0.05);
+  }
+  50% {
+    box-shadow: 0 0 20px rgb(245 158 11 / 0.4), inset 0 0 12px rgb(245 158 11 / 0.1);
+  }
+}
+
+@keyframes btn-glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-1px, 1px); }
+  40% { transform: translate(1px, -1px); }
+  60% { transform: translate(-1px, 0); }
+  80% { transform: translate(1px, 1px); }
+  100% { transform: translate(0); }
+}
+
+.btn-neon-hover {
+  transition: all 200ms var(--ease-out);
+}
+
+.btn-neon-hover:hover {
+  box-shadow: 0 0 15px rgb(245 158 11 / 0.3), 0 0 30px rgb(245 158 11 / 0.1);
+  border-color: rgb(245 158 11 / 0.4);
+  text-shadow: 0 0 8px rgb(245 158 11 / 0.5);
+}
+
+.btn-neon-hover:active {
+  animation: btn-glitch 150ms ease-in-out;
+}
+
+.btn-neon-hover:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-neon-amber), 0 0 20px rgb(245 158 11 / 0.3);
 }
 
 /* ============================================
@@ -330,21 +402,21 @@ body {
    (Overrides shadcn defaults with our design system)
    ============================================ */
 .dark {
-  /* Core Paleontological Noir Colors */
-  --background: #0c0a09;
+  /* Core Neon Paleontology Colors */
+  --background: #050505;
   --foreground: #f2f2f0;
 
-  /* Card surfaces with warm black */
-  --card: rgb(28 25 23 / 0.8);
+  /* Card surfaces - deeper void */
+  --card: rgb(18 16 15 / 0.85);
   --card-foreground: #f2f2f0;
 
   /* Popover matches card */
-  --popover: rgb(28 25 23 / 0.95);
+  --popover: rgb(18 16 15 / 0.95);
   --popover-foreground: #f2f2f0;
 
   /* Primary - Bone White */
   --primary: #e7e5e4;
-  --primary-foreground: #0c0a09;
+  --primary-foreground: #050505;
 
   /* Secondary - Muted stone */
   --secondary: #57534e;
@@ -354,34 +426,34 @@ body {
   --muted: #78716c;
   --muted-foreground: #a8a29e;
 
-  /* Accent - Amber */
-  --accent: #d97706;
-  --accent-foreground: #0c0a09;
+  /* Accent - Neon Amber */
+  --accent: #f59e0b;
+  --accent-foreground: #050505;
 
-  /* Destructive - Laser Red */
+  /* Destructive - Neon Danger */
   --destructive: #ef4444;
 
   /* Borders and inputs */
-  --border: rgb(255 255 255 / 0.08);
-  --input: rgb(255 255 255 / 0.08);
-  --ring: #d97706;
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.1);
+  --ring: #f59e0b;
 
-  /* Chart colors - Paleontological palette */
-  --chart-1: #d97706;
-  --chart-2: #65a30d;
-  --chart-3: #a8a29e;
-  --chart-4: #c9a962;
+  /* Chart colors - Neon spectrum */
+  --chart-1: #f59e0b;
+  --chart-2: #84cc16;
+  --chart-3: #0ea5e9;
+  --chart-4: #a8a29e;
   --chart-5: #ef4444;
 
-  /* Sidebar - Dark variant */
-  --sidebar: #0c0a09;
+  /* Sidebar - Void variant */
+  --sidebar: #050505;
   --sidebar-foreground: #f2f2f0;
-  --sidebar-primary: #d97706;
-  --sidebar-primary-foreground: #0c0a09;
-  --sidebar-accent: #1c1917;
+  --sidebar-primary: #f59e0b;
+  --sidebar-primary-foreground: #050505;
+  --sidebar-accent: #0a0a0a;
   --sidebar-accent-foreground: #f2f2f0;
-  --sidebar-border: rgb(255 255 255 / 0.08);
-  --sidebar-ring: #d97706;
+  --sidebar-border: rgb(255 255 255 / 0.1);
+  --sidebar-ring: #f59e0b;
 }
 
 /* ============================================

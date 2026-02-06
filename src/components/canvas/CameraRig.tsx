@@ -30,9 +30,11 @@ type AnimationPhase = 'idle' | 'whip-out' | 'hold' | 'whip-in';
 // Animation Constants
 // -----------------------------------------------------------------------------
 
-const WHIP_PAN_DURATION = 0.4; // seconds
-const WHIP_PAN_DISTANCE = 15; // horizontal offset during whip
-const HOLD_DURATION = 0.1; // brief pause at apex
+const WHIP_PAN_DURATION = 0.35; // seconds (snappier)
+const WHIP_PAN_DISTANCE = 18; // horizontal offset during whip (wider sweep)
+const HOLD_DURATION = 0.08; // brief pause at apex
+const FOV_BASE = 45;
+const FOV_PEAK = 65; // more dramatic FOV zoom for motion blur feel
 
 // -----------------------------------------------------------------------------
 // Camera Rig Component
@@ -138,16 +140,18 @@ export function CameraRig({ specimen }: CameraRigProps) {
       switch (animationPhase) {
         case 'whip-out': {
           const t = Math.min(animationProgress.current / WHIP_PAN_DURATION, 1);
-          // Ease out cubic for fast start
-          const eased = 1 - Math.pow(1 - t, 3);
+          // Spring-like ease with slight overshoot (PRD: heavy spring physics)
+          const eased = t < 1
+            ? 1 - Math.pow(1 - t, 4) * Math.cos(t * Math.PI * 0.5)
+            : 1;
 
           // Apply horizontal offset
           const offset = whipOffset.current.clone().multiplyScalar(eased);
           camera.position.copy(basePosition.current).add(offset);
 
-          // Add motion blur effect via FOV change
+          // Dramatic FOV change for motion blur feel
           if (isPerspectiveCamera(camera)) {
-            camera.fov = 45 + eased * 15;
+            camera.fov = FOV_BASE + eased * (FOV_PEAK - FOV_BASE);
             camera.updateProjectionMatrix();
           }
 
@@ -170,10 +174,8 @@ export function CameraRig({ specimen }: CameraRigProps) {
 
         case 'whip-in': {
           const t = Math.min(animationProgress.current / WHIP_PAN_DURATION, 1);
-          // Ease in out for smooth landing
-          const eased = t < 0.5
-            ? 4 * t * t * t
-            : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          // Spring-like ease-in with deceleration (smooth landing)
+          const eased = 1 - Math.pow(1 - t, 3) * (1 - t);
 
           // Interpolate from offset position to target
           camera.position.lerpVectors(
@@ -182,13 +184,13 @@ export function CameraRig({ specimen }: CameraRigProps) {
             eased
           );
 
-          // Return FOV to normal
+          // Return FOV to normal with spring settle
           if (isPerspectiveCamera(camera)) {
-            camera.fov = 60 - eased * 15;
+            camera.fov = FOV_PEAK - eased * (FOV_PEAK - FOV_BASE);
             camera.updateProjectionMatrix();
 
             if (t >= 1) {
-              camera.fov = 45;
+              camera.fov = FOV_BASE;
               camera.updateProjectionMatrix();
             }
           }

@@ -54,11 +54,11 @@ function SceneLighting() {
         color="#a8c8e8"
       />
 
-      {/* Rim light - dramatic backlight */}
+      {/* Rim light - dramatic neon amber backlight */}
       <directionalLight
         position={[0, 3, -8]}
         intensity={0.8}
-        color="#d97706"
+        color="#f59e0b"
       />
 
       {/* Ambient for base illumination */}
@@ -81,7 +81,7 @@ function MuseumFloor() {
         scale={20}
         blur={2}
         far={10}
-        color="#0c0a09"
+        color="#050505"
       />
 
       {/* Subtle grid for spatial reference */}
@@ -90,10 +90,10 @@ function MuseumFloor() {
         args={[30, 30]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor="#292524"
+        cellColor="#1a1918"
         sectionSize={5}
         sectionThickness={1}
-        sectionColor="#44403c"
+        sectionColor="#2a2826"
         fadeDistance={25}
         fadeStrength={1}
         infiniteGrid
@@ -153,7 +153,7 @@ export function Scene() {
         position: [5, 3, 8],
       }}
       style={{
-        background: 'linear-gradient(180deg, #0c0a09 0%, #1c1917 100%)',
+        background: 'linear-gradient(180deg, #050505 0%, #0a0908 100%)',
       }}
     >
       <SceneContent />

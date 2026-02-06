@@ -23,7 +23,7 @@ const velociraptor: SpecimenData = {
     location: 'Mongolia, Gobi Desert',
   },
   presentation: {
-    color: '#d97706',
+    color: '#f59e0b',
     scale: 1.0,
     camera: {
       idle: [3, 2, 5],
@@ -373,7 +373,7 @@ const tyrannosaurusRex: SpecimenData = {
     location: 'Western North America',
   },
   presentation: {
-    color: '#65a30d',
+    color: '#84cc16',
     scale: 0.5,
     camera: {
       idle: [15, 8, 20],

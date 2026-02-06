@@ -119,7 +119,7 @@ const FresnelGlowMaterial = shaderMaterial(
   {
     uTime: 0,
     uBaseColor: new THREE.Color('#d6d3d1'),
-    uGlowColor: new THREE.Color('#d97706'),
+    uGlowColor: new THREE.Color('#f59e0b'),
     uFresnelPower: 3.0,
     uGlowIntensity: 0.3,
   },
@@ -199,7 +199,7 @@ export { FresnelGlowMaterial };
 const HologramMaterial = shaderMaterial(
   {
     uTime: 0,
-    uColor: new THREE.Color('#65a30d'),
+    uColor: new THREE.Color('#84cc16'),
     uOpacity: 0.85,
     uScanLineCount: 100.0,
   },

@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import type { SpecimenData, BoneMetadata } from '@/lib/types';
 import { useExhibitStore } from '@/lib/store';
 import { BoneFocus } from './BoneFocus';
+import { XRayShaderMaterial, FresnelGlowMaterial, HologramMaterial } from './shaders/XRayMaterial';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -307,57 +308,67 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
     }
   }, [explodeFactor, discoveredBones]);
 
-  // Apply scan mode materials
+  // Create custom shader material instances
+  const xrayMaterial = useMemo(() => {
+    const mat = new XRayShaderMaterial();
+    mat.transparent = true;
+    mat.side = THREE.DoubleSide;
+    mat.depthWrite = false;
+    return mat;
+  }, []);
+
+  const fresnelMaterial = useMemo(() => {
+    const mat = new FresnelGlowMaterial();
+    return mat;
+  }, []);
+
+  const hologramMaterial = useMemo(() => {
+    const mat = new HologramMaterial();
+    mat.transparent = true;
+    mat.side = THREE.DoubleSide;
+    mat.depthWrite = false;
+    mat.uniforms.uColor.value = new THREE.Color(data.presentation.color);
+    return mat;
+  }, [data.presentation.color]);
+
+  // Update shader time uniform each frame
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (scanMode === 'xray') {
+      xrayMaterial.uniforms.uTime.value = t;
+    } else if (scanMode === 'skin') {
+      hologramMaterial.uniforms.uTime.value = t;
+    } else {
+      fresnelMaterial.uniforms.uTime.value = t;
+    }
+  });
+
+  // Apply scan mode materials (using custom shaders)
   useEffect(() => {
     clonedScene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        // Clone material to avoid affecting other instances
+        // Store original material on first encounter
         if (!child.userData.originalMaterial) {
           child.userData.originalMaterial = child.material;
-          child.material = (child.material as THREE.Material).clone();
         }
-
-        const material = child.material as THREE.MeshStandardMaterial;
 
         switch (scanMode) {
           case 'skeleton':
-            material.wireframe = false;
-            material.opacity = 1;
-            material.transparent = false;
-            material.emissive = new THREE.Color('#000000');
-            material.emissiveIntensity = 0;
-            material.color = new THREE.Color('#d6d3d1');
-            material.roughness = 0.8;
-            material.metalness = 0.1;
+            child.material = fresnelMaterial;
             break;
 
           case 'skin':
-            material.wireframe = false;
-            material.opacity = 0.85;
-            material.transparent = true;
-            material.emissive = new THREE.Color('#000000');
-            material.emissiveIntensity = 0;
-            material.color = new THREE.Color(data.presentation.color);
-            material.roughness = 0.6;
-            material.metalness = 0.2;
+            hologramMaterial.uniforms.uColor.value = new THREE.Color(data.presentation.color);
+            child.material = hologramMaterial;
             break;
 
           case 'xray':
-            material.wireframe = true;
-            material.opacity = 0.7;
-            material.transparent = true;
-            material.emissive = new THREE.Color('#ef4444');
-            material.emissiveIntensity = 0.4;
-            material.color = new THREE.Color('#ef4444');
-            material.roughness = 0.5;
-            material.metalness = 0.3;
+            child.material = xrayMaterial;
             break;
         }
-
-        material.needsUpdate = true;
       }
     });
-  }, [clonedScene, scanMode, data.presentation.color]);
+  }, [clonedScene, scanMode, data.presentation.color, xrayMaterial, fresnelMaterial, hologramMaterial]);
 
   // Handle bone click for claw mechanics
   const focusBone = useExhibitStore((state) => state.focusBone);

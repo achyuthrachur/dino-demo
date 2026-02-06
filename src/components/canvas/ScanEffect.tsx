@@ -44,15 +44,15 @@ function SkinEffects() {
   return (
     <EffectComposer>
       <Bloom
-        intensity={0.3}
-        luminanceThreshold={0.6}
-        luminanceSmoothing={0.9}
-        kernelSize={KernelSize.MEDIUM}
+        intensity={0.5}
+        luminanceThreshold={0.4}
+        luminanceSmoothing={0.85}
+        kernelSize={KernelSize.LARGE}
         blendFunction={BlendFunction.ADD}
       />
       <Vignette
-        offset={0.4}
-        darkness={0.4}
+        offset={0.35}
+        darkness={0.5}
         blendFunction={BlendFunction.NORMAL}
       />
     </EffectComposer>
@@ -67,15 +67,15 @@ function XRayEffects() {
   return (
     <EffectComposer>
       <Bloom
-        intensity={0.8}
-        luminanceThreshold={0.2}
-        luminanceSmoothing={0.9}
-        kernelSize={KernelSize.LARGE}
+        intensity={1.2}
+        luminanceThreshold={0.15}
+        luminanceSmoothing={0.8}
+        kernelSize={KernelSize.HUGE}
         blendFunction={BlendFunction.ADD}
       />
       <Vignette
-        offset={0.3}
-        darkness={0.7}
+        offset={0.25}
+        darkness={0.8}
         blendFunction={BlendFunction.NORMAL}
       />
     </EffectComposer>

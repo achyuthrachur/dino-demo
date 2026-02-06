@@ -4,12 +4,11 @@
 // Main Exhibit Page - Digital Museum: Infinite Mesozoic
 // =============================================================================
 
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import { animate, createScope } from 'animejs';
+import { motion } from 'framer-motion';
 import { useExhibitStore } from '@/lib/store';
 import { getSpecimenById } from '@/lib/registry';
-import { useReducedMotion } from '@/lib/useReducedMotion';
 import {
   Controls,
   Placard,
@@ -70,31 +69,14 @@ function SceneLoader() {
 // -----------------------------------------------------------------------------
 
 function Header() {
-  const headerRef = useRef<HTMLElement>(null);
-  const prefersReducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!headerRef.current || prefersReducedMotion) return;
-
-    const scope = createScope({ root: headerRef.current }).add(() => {
-      animate('.header-content', {
-        opacity: [0, 1],
-        translateY: [-20, 0],
-        duration: 800,
-        delay: 200,
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [prefersReducedMotion]);
-
   return (
-    <header
-      ref={headerRef}
-      className="absolute top-0 left-0 right-0 z-20 p-4 sm:p-6"
-    >
-      <div className="header-content flex items-start justify-between">
+    <header className="absolute top-0 left-0 right-0 z-20 p-4 sm:p-6">
+      <motion.div
+        className="flex items-start justify-between"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+      >
         {/* Logo/Title */}
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
@@ -141,7 +123,7 @@ function Header() {
             </TooltipContent>
           </Tooltip>
         </div>
-      </div>
+      </motion.div>
     </header>
   );
 }
@@ -151,38 +133,24 @@ function Header() {
 // -----------------------------------------------------------------------------
 
 function LeftSidebar() {
-  const sidebarRef = useRef<HTMLDivElement>(null);
   const selectedSpecimenId = useExhibitStore((state) => state.selectedSpecimenId);
   const specimen = selectedSpecimenId ? getSpecimenById(selectedSpecimenId) : null;
-  const prefersReducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!sidebarRef.current || prefersReducedMotion) return;
-
-    const scope = createScope({ root: sidebarRef.current }).add(() => {
-      animate('.sidebar-content', {
-        opacity: [0, 1],
-        translateX: [-30, 0],
-        duration: 700,
-        delay: 400,
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [prefersReducedMotion]);
 
   if (!specimen) return null;
 
   return (
     <aside
-      ref={sidebarRef}
       className="absolute left-4 sm:left-6 top-24 bottom-32 z-10 flex-col justify-center pointer-events-none hidden md:flex"
       aria-label="Specimen information"
     >
-      <div className="sidebar-content pointer-events-auto">
+      <motion.div
+        className="pointer-events-auto"
+        initial={{ opacity: 0, x: -30 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.7, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      >
         <Placard specimen={specimen} />
-      </div>
+      </motion.div>
     </aside>
   );
 }
@@ -192,46 +160,32 @@ function LeftSidebar() {
 // -----------------------------------------------------------------------------
 
 function RightSidebar() {
-  const sidebarRef = useRef<HTMLDivElement>(null);
   const openCompareDrawer = useExhibitStore((state) => state.openCompareDrawer);
-  const prefersReducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!sidebarRef.current || prefersReducedMotion) return;
-
-    const scope = createScope({ root: sidebarRef.current }).add(() => {
-      animate('.sidebar-content', {
-        opacity: [0, 1],
-        translateX: [30, 0],
-        duration: 700,
-        delay: 500,
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [prefersReducedMotion]);
 
   return (
     <aside
-      ref={sidebarRef}
       className="absolute right-4 sm:right-6 top-24 z-10 w-64 pointer-events-none hidden md:block"
       aria-label="Specimen selection"
     >
-      <div className="sidebar-content pointer-events-auto space-y-3">
+      <motion.div
+        className="pointer-events-auto space-y-3"
+        initial={{ opacity: 0, x: 30 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.7, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      >
         <SpecimenSelector />
 
         {/* Compare button */}
         <Button
           variant="outline"
-          className="w-full glass"
+          className="w-full glass btn-neon-hover"
           onClick={() => openCompareDrawer('deinonychus-antirrhopus')}
           aria-label="Compare specimen sizes"
         >
           <ArrowLeftRight className="h-4 w-4 mr-2" aria-hidden="true" />
           Compare Sizes
         </Button>
-      </div>
+      </motion.div>
     </aside>
   );
 }
@@ -241,33 +195,16 @@ function RightSidebar() {
 // -----------------------------------------------------------------------------
 
 function BottomDock() {
-  const dockRef = useRef<HTMLDivElement>(null);
-  const prefersReducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!dockRef.current || prefersReducedMotion) return;
-
-    const scope = createScope({ root: dockRef.current }).add(() => {
-      animate('.dock-content', {
-        opacity: [0, 1],
-        translateY: [30, 0],
-        duration: 700,
-        delay: 600,
-        ease: 'outQuint',
-      });
-    });
-
-    return () => scope.revert();
-  }, [prefersReducedMotion]);
-
   return (
-    <div
-      ref={dockRef}
-      className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6 z-10"
-    >
-      <div className="dock-content max-w-4xl mx-auto">
+    <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6 z-10">
+      <motion.div
+        className="max-w-4xl mx-auto"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      >
         <Controls />
-      </div>
+      </motion.div>
     </div>
   );
 }
