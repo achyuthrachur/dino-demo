@@ -382,10 +382,12 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
     };
   }, [animationAction, actions]);
 
-  // Apply scan mode materials (using custom shaders)
+  // Apply scan mode materials (custom shaders for static, standard for skinned)
   useEffect(() => {
     clonedScene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
+        const isSkinned = child instanceof THREE.SkinnedMesh;
+
         // Store original material on first encounter
         if (!child.userData.originalMaterial) {
           child.userData.originalMaterial = child.material;
@@ -393,17 +395,52 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
 
         switch (scanMode) {
           case 'skeleton':
-            child.material = fresnelMaterial;
+            if (isSkinned) {
+              child.material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color('#d6d3d1'),
+                roughness: 0.3,
+                metalness: 0.2,
+                emissive: new THREE.Color('#f59e0b'),
+                emissiveIntensity: 0.1,
+              });
+            } else {
+              child.material = fresnelMaterial;
+            }
             break;
 
           case 'skin':
-            hologramMaterial.uniforms.uColor.value = new THREE.Color(data.presentation.color);
-            child.material = hologramMaterial;
+            if (isSkinned) {
+              child.material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color(data.presentation.color),
+                transparent: true,
+                opacity: 0.9,
+                wireframe: true,
+              });
+            } else {
+              hologramMaterial.uniforms.uColor.value = new THREE.Color(data.presentation.color);
+              child.material = hologramMaterial;
+            }
             break;
 
           case 'xray':
-            child.material = xrayMaterial;
+            if (isSkinned) {
+              child.material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color('#ef4444'),
+                transparent: true,
+                opacity: 0.5,
+                wireframe: true,
+                emissive: new THREE.Color('#ef4444'),
+                emissiveIntensity: 0.5,
+              });
+            } else {
+              child.material = xrayMaterial;
+            }
             break;
+        }
+
+        // Skinned meshes need frustumCulled=false to prevent disappearing
+        if (isSkinned) {
+          child.frustumCulled = false;
         }
       }
     });
