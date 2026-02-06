@@ -41,6 +41,10 @@ interface DiscoveredBone {
 
 const AVAILABLE_MODELS: Record<string, boolean> = {
   'tyrannosaurus-rex': true,
+  'velociraptor-mongoliensis': true,
+  'deinonychus-antirrhopus': true,
+  'utahraptor-ostrommaysorum': true,
+  'microraptor-gui': true,
 };
 
 function isModelAvailable(specimenId: string): boolean {
@@ -62,9 +66,9 @@ function BoneLabel({ bone, visible, accentColor, onClick }: BoneLabelProps) {
   if (!visible || isThisBoneFocused) return null;
 
   const confidenceColors = {
-    certain: '#6b8f71',
-    likely: '#c9a962',
-    debated: '#b07070',
+    certain: '#84cc16',
+    likely: '#f59e0b',
+    debated: '#ef4444',
   };
 
   return (
@@ -435,7 +439,8 @@ export function Specimen({ data }: SpecimenProps) {
 }
 
 // -----------------------------------------------------------------------------
-// Preload T-Rex model
+// Preload default models
 // -----------------------------------------------------------------------------
 
+useGLTF.preload('/models/velociraptor-mongoliensis/skeleton.glb');
 useGLTF.preload('/models/tyrannosaurus-rex/skeleton.glb');

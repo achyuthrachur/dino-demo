@@ -144,6 +144,21 @@ export function useGestureActions(
           break;
 
         // -----------------------------------------------------------------
+        // Two Closed Fists -> Pan
+        // -----------------------------------------------------------------
+        case 'closed_fists':
+          if (gesture.delta) {
+            const panEvent = new CustomEvent('gesture:pan', {
+              detail: {
+                deltaX: gesture.delta.x,
+                deltaY: gesture.delta.y,
+              },
+            });
+            window.dispatchEvent(panEvent);
+          }
+          break;
+
+        // -----------------------------------------------------------------
         // Peace Sign -> Cycle Scan Mode
         // -----------------------------------------------------------------
         case 'peace_sign':
@@ -188,6 +203,7 @@ declare global {
   interface WindowEventMap {
     'gesture:rotate': CustomEvent<{ deltaX: number; deltaY: number }>;
     'gesture:zoom': CustomEvent<{ value: number }>;
+    'gesture:pan': CustomEvent<{ deltaX: number; deltaY: number }>;
   }
 }
 

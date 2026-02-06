@@ -16,6 +16,7 @@ export type GestureType =
   | 'pinch_drag' // One-hand pinch & drag -> Rotate
   | 'pinch_spread' // Two-hand pinch & spread -> Zoom
   | 'open_palms' // Two-hand open palms -> Explode/Reassemble
+  | 'closed_fists' // Two closed fists moving together -> Pan
   | 'palm_hold' // Open palm hold 1s -> Toggle callouts
   | 'peace_sign' // V sign -> Cycle scan mode
   | 'none';
@@ -106,6 +107,7 @@ export class GestureRecognizer {
   private palmHoldStart: number | null = null;
   private lastPinchPosition: { x: number; y: number } | null = null;
   private smoothedValue = 0;
+  private lastFistCenter: { x: number; y: number } | null = null;
 
   /**
    * Initialize MediaPipe HandLandmarker
@@ -212,10 +214,23 @@ export class GestureRecognizer {
       const openPalms = this.detectTwoOpenPalms(hands);
       if (openPalms.detected) {
         this.palmHoldStart = null;
+        this.lastFistCenter = null;
         return {
           type: 'open_palms',
           confidence: openPalms.confidence,
           value: this.smoothValue(openPalms.value),
+          handCount,
+        };
+      }
+
+      // Check for two closed fists (pan)
+      const closedFists = this.detectTwoClosedFists(hands);
+      if (closedFists.detected) {
+        this.palmHoldStart = null;
+        return {
+          type: 'closed_fists',
+          confidence: closedFists.confidence,
+          delta: closedFists.delta,
           handCount,
         };
       }
@@ -404,14 +419,83 @@ export class GestureRecognizer {
       Math.pow(wrist1.x - wrist2.x, 2) + Math.pow(wrist1.y - wrist2.y, 2)
     );
 
-    // Normalize: closer = more exploded (inverted from zoom)
-    // Min distance ~0.1, max ~0.8
-    const normalizedValue = Math.min(1, Math.max(0, (distance - 0.1) / 0.7));
+    // Normalize: wider apart = more exploded
+    // Adjusted for natural arm span: min ~0.2, max ~0.7
+    const normalizedValue = Math.min(1, Math.max(0, (distance - 0.2) / 0.5));
 
     return {
       detected: true,
       value: normalizedValue,
       confidence: (palm1.confidence + palm2.confidence) / 2,
+    };
+  }
+
+  /**
+   * Detect if hand is a closed fist (all fingers curled)
+   */
+  private detectClosedFist(hand: DetectedHand): { detected: boolean; confidence: number } {
+    const landmarks = hand.landmarks;
+
+    // All four fingers should be curled (tips below PIPs)
+    const fingersCurled = [
+      landmarks[LANDMARKS.INDEX_TIP].y > landmarks[LANDMARKS.INDEX_PIP].y,
+      landmarks[LANDMARKS.MIDDLE_TIP].y > landmarks[LANDMARKS.MIDDLE_PIP].y,
+      landmarks[LANDMARKS.RING_TIP].y > landmarks[LANDMARKS.RING_PIP].y,
+      landmarks[LANDMARKS.PINKY_TIP].y > landmarks[LANDMARKS.PINKY_PIP].y,
+    ];
+
+    // Thumb should be curled in (close to palm)
+    const thumbCurled =
+      Math.abs(landmarks[LANDMARKS.THUMB_TIP].x - landmarks[LANDMARKS.THUMB_MCP].x) < 0.06;
+
+    const allCurled = fingersCurled.every((c) => c) && thumbCurled;
+    const curledCount = fingersCurled.filter((c) => c).length + (thumbCurled ? 1 : 0);
+
+    return {
+      detected: allCurled,
+      confidence: curledCount / 5,
+    };
+  }
+
+  /**
+   * Detect two closed fists moving together for pan gesture
+   */
+  private detectTwoClosedFists(hands: DetectedHand[]): { detected: boolean; delta: { x: number; y: number }; confidence: number } {
+    const fist1 = this.detectClosedFist(hands[0]);
+    const fist2 = this.detectClosedFist(hands[1]);
+
+    if (!fist1.detected || !fist2.detected) {
+      this.lastFistCenter = null;
+      return { detected: false, delta: { x: 0, y: 0 }, confidence: 0 };
+    }
+
+    // Calculate midpoint between the two wrists
+    const wrist1 = hands[0].landmarks[LANDMARKS.WRIST];
+    const wrist2 = hands[1].landmarks[LANDMARKS.WRIST];
+    const center = {
+      x: (wrist1.x + wrist2.x) / 2,
+      y: (wrist1.y + wrist2.y) / 2,
+    };
+
+    let delta = { x: 0, y: 0 };
+
+    if (this.lastFistCenter) {
+      delta = {
+        x: (center.x - this.lastFistCenter.x) * -3, // Inverted X for mirrored video
+        y: (center.y - this.lastFistCenter.y) * 3,
+      };
+
+      // Apply dead zone
+      if (Math.abs(delta.x) < GESTURE_DEADZONE) delta.x = 0;
+      if (Math.abs(delta.y) < GESTURE_DEADZONE) delta.y = 0;
+    }
+
+    this.lastFistCenter = center;
+
+    return {
+      detected: true,
+      delta,
+      confidence: (fist1.confidence + fist2.confidence) / 2,
     };
   }
 

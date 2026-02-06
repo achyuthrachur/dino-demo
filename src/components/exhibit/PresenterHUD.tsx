@@ -91,6 +91,7 @@ function GestureInstructions({ currentGesture }: { currentGesture: string | null
     { gesture: 'Pinch & Drag', action: 'Rotate', icon: '👌', id: 'pinch_drag' },
     { gesture: 'Two-hand Pinch', action: 'Zoom', icon: '🤏', id: 'pinch_spread' },
     { gesture: 'Open Palms', action: 'Explode', icon: '🖐️', id: 'open_palms' },
+    { gesture: 'Two Fists', action: 'Pan', icon: '✊', id: 'closed_fists' },
     { gesture: 'Peace Sign', action: 'Scan Mode', icon: '✌️', id: 'peace_sign' },
     { gesture: 'Palm Hold', action: 'Callouts', icon: '✋', id: 'palm_hold' },
   ];
@@ -138,7 +139,8 @@ function drawHandLandmarks(
   ctx: CanvasRenderingContext2D,
   hands: DetectedHand[],
   width: number,
-  height: number
+  height: number,
+  activeGesture?: GestureState | null
 ) {
   // Clear with slight fade for trail effect
   ctx.globalCompositeOperation = 'destination-out';
@@ -277,6 +279,46 @@ function drawHandLandmarks(
     ctx.shadowBlur = 0;
   });
 
+  // Draw explode debugger line between hands when open_palms gesture is active
+  if (hands.length === 2 && activeGesture?.type === 'open_palms') {
+    const wrist1 = hands[0].landmarks[0];
+    const wrist2 = hands[1].landmarks[0];
+
+    const x1 = (1 - wrist1.x) * width;
+    const y1 = wrist1.y * height;
+    const x2 = (1 - wrist2.x) * width;
+    const y2 = wrist2.y * height;
+
+    // Green when value > 0, dim when inactive
+    const explodeValue = activeGesture.value ?? 0;
+    const lineColor = explodeValue > 0 ? '#84cc16' : '#f59e0b';
+    const lineAlpha = 0.4 + explodeValue * 0.6;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2 + explodeValue * 3;
+    ctx.globalAlpha = lineAlpha;
+    ctx.shadowColor = lineColor;
+    ctx.shadowBlur = 12 + explodeValue * 8;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw explode value label at midpoint
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    ctx.fillStyle = lineColor;
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 8;
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`EXPLODE ${Math.round(explodeValue * 100)}%`, midX, midY - 10);
+    ctx.textAlign = 'start';
+    ctx.shadowBlur = 0;
+  }
+
   // Clean up trails for hands no longer detected
   if (hands.length === 0) {
     trailBuffers.clear();
@@ -384,11 +426,11 @@ export function PresenterHUD() {
       // Update hand count
       setHandCount(hands.length);
 
-      // Draw hand landmarks
-      drawHandLandmarks(ctx, hands, canvas.width, canvas.height);
-
       // Recognize gesture
       const gesture = gestureRecognizer.recognizeGesture(hands);
+
+      // Draw hand landmarks (with gesture state for visual debugger)
+      drawHandLandmarks(ctx, hands, canvas.width, canvas.height, gesture);
       setCurrentGesture(gesture);
       setPresenterConfidence(gesture.confidence);
 
