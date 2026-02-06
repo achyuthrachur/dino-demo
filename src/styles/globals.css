@@ -322,6 +322,43 @@ body {
 }
 
 /* ============================================
+   Story Tour — Chapter Visibility & Scroll Prompt
+   ============================================ */
+.chapter-section .glass-strong {
+  opacity: 0;
+  transform: translateY(40px);
+  will-change: opacity, transform;
+}
+
+.chapter-visible .glass-strong {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.8; }
+  50% { transform: translateY(6px); opacity: 0.4; }
+}
+
+.scroll-chevron {
+  animation: scroll-bounce 1.5s ease-in-out infinite;
+}
+.scroll-chevron:last-child {
+  animation-delay: 0.15s;
+}
+
+/* Boot sequence cursor blink */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.boot-cursor {
+  animation: cursor-blink 0.8s step-end infinite;
+}
+
+/* ============================================
    Reduced Motion
    ============================================ */
 @media (prefers-reduced-motion: reduce) {
@@ -335,8 +372,15 @@ body {
   }
 
   .animate-scan,
-  .scan-overlay::after {
+  .scan-overlay::after,
+  .scroll-chevron,
+  .boot-cursor {
     animation: none !important;
+  }
+
+  .chapter-section .glass-strong {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 
