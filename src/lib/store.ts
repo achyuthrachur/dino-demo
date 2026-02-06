@@ -10,9 +10,8 @@ import { ScanMode, DataMode } from './types';
 // -----------------------------------------------------------------------------
 
 interface ExhibitState {
-  // Active specimen
+  // Active specimen (T-Rex only)
   selectedSpecimenId: string | null;
-  activeTab: 'raptors' | 'trex';
 
   // 3D View State
   explodeFactor: number; // 0-1 range
@@ -43,7 +42,6 @@ interface ExhibitState {
 
   // Actions
   setSelectedSpecimen: (id: string | null) => void;
-  setActiveTab: (tab: 'raptors' | 'trex') => void;
   setExplodeFactor: (factor: number) => void;
   setScanMode: (mode: ScanMode) => void;
   cycleScanMode: () => void;
@@ -67,8 +65,7 @@ interface ExhibitState {
 // -----------------------------------------------------------------------------
 
 const initialState = {
-  selectedSpecimenId: 'velociraptor-mongoliensis',
-  activeTab: 'raptors' as const,
+  selectedSpecimenId: 'tyrannosaurus-rex',
   explodeFactor: 0,
   scanMode: 'skeleton' as ScanMode,
   showCallouts: true,
@@ -108,11 +105,6 @@ export const useExhibitStore = create<ExhibitState>((set, get) => ({
       // Reset view state when changing specimen
       explodeFactor: 0,
       cameraTarget: 'idle',
-    }),
-
-  setActiveTab: (tab) =>
-    set({
-      activeTab: tab,
     }),
 
   // ---------------------------------------------------------------------------
@@ -222,8 +214,8 @@ export const useExhibitStore = create<ExhibitState>((set, get) => ({
       cameraTarget: boneName.includes('claw') || boneName.includes('foot')
         ? 'claw'
         : boneName.includes('skull') || boneName.includes('head') || boneName.includes('jaw')
-        ? 'head'
-        : 'idle',
+          ? 'head'
+          : 'idle',
     }),
 
   clearBoneFocus: () =>
@@ -254,7 +246,6 @@ export const useExhibitStore = create<ExhibitState>((set, get) => ({
 export const useSpecimenState = () =>
   useExhibitStore((state) => ({
     selectedSpecimenId: state.selectedSpecimenId,
-    activeTab: state.activeTab,
   }));
 
 /** Select only the 3D view state */

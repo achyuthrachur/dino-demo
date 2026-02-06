@@ -45,8 +45,8 @@ export function useGestureActions(
 
   // Store actions
   const setExplodeFactor = useExhibitStore((state) => state.setExplodeFactor);
-  const cycleScanMode = useExhibitStore((state) => state.cycleScanMode);
-  const toggleCallouts = useExhibitStore((state) => state.toggleCallouts);
+  const scanMode = useExhibitStore((state) => state.scanMode);
+  const setScanMode = useExhibitStore((state) => state.setScanMode);
   const setAnimationAction = useExhibitStore((state) => state.setAnimationAction);
 
   // Refs to track state across frames
@@ -54,7 +54,6 @@ export function useGestureActions(
   const lastExplodeValue = useRef<number | null>(null);
   const peaceSignCooldown = useRef(false);
   const palmHoldTriggered = useRef(false);
-  const roarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset tracking refs
   const reset = useCallback(() => {
@@ -88,11 +87,8 @@ export function useGestureActions(
       switch (gesture.type) {
         // -----------------------------------------------------------------
         // Pinch & Drag -> Rotate (handled by camera, not store)
-        // The delta values can be used by the camera rig if needed
         // -----------------------------------------------------------------
         case 'pinch_drag':
-          // Rotation is typically handled in the 3D scene itself
-          // Could dispatch to a custom event or context if needed
           if (gesture.delta) {
             const rotateEvent = new CustomEvent('gesture:rotate', {
               detail: {
@@ -109,9 +105,11 @@ export function useGestureActions(
         // -----------------------------------------------------------------
         case 'pinch_spread':
           if (gesture.value !== undefined) {
-            // Map gesture value (0-1) to zoom
-            // We use explodeFactor for now as a proxy for zoom
-            // In a real implementation, this would control camera distance
+            // Debug log to calibrate
+            if (process.env.NODE_ENV === 'development') {
+              // console.log('Zoom Gesture Value:', gesture.value);
+            }
+
             const zoomEvent = new CustomEvent('gesture:zoom', {
               detail: {
                 value: gesture.value * mergedConfig.zoomSensitivity,
@@ -127,56 +125,43 @@ export function useGestureActions(
         // -----------------------------------------------------------------
         case 'open_palms':
           if (gesture.value !== undefined) {
-            // Map palm distance to explode factor
-            // Closer palms = less exploded, farther = more exploded
-            const explodeFactor = gesture.value;
-            setExplodeFactor(explodeFactor);
-            lastExplodeValue.current = explodeFactor;
+            // Apply calibration curve to make it feel better
+            // Input 0-1, Output 0-1 but with easing
+            const linearValue = gesture.value;
+            setExplodeFactor(linearValue);
+            lastExplodeValue.current = linearValue;
           }
           break;
 
         // -----------------------------------------------------------------
-        // Palm Hold (1 second) -> Toggle Callouts
+        // Palm Hold (1 second) -> Toggle Skin
         // -----------------------------------------------------------------
         case 'palm_hold':
           if (!palmHoldTriggered.current) {
-            toggleCallouts();
+            // Toggle between skeleton and skin
+            setScanMode(scanMode === 'skeleton' ? 'skin' : 'skeleton');
             palmHoldTriggered.current = true;
           }
           break;
 
         // -----------------------------------------------------------------
-        // Two Closed Fists -> Pan
-        // -----------------------------------------------------------------
-        case 'closed_fists':
-          if (gesture.delta) {
-            const panEvent = new CustomEvent('gesture:pan', {
-              detail: {
-                deltaX: gesture.delta.x,
-                deltaY: gesture.delta.y,
-              },
-            });
-            window.dispatchEvent(panEvent);
-          }
-          break;
-
-        // -----------------------------------------------------------------
-        // Peace Sign -> Trigger Roar Animation (5 sec then revert to Idle)
+        // Peace Sign -> Roar (Trigger Animation)
         // -----------------------------------------------------------------
         case 'peace_sign':
           if (!peaceSignCooldown.current) {
+            // Trigger Roar
             setAnimationAction('Roar');
-            peaceSignCooldown.current = true;
 
-            // Clear any existing roar timeout
-            if (roarTimeoutRef.current) clearTimeout(roarTimeoutRef.current);
-
-            // Revert to Idle after 5 seconds
-            roarTimeoutRef.current = setTimeout(() => {
+            // Reset to Idle after 3 seconds
+            setTimeout(() => {
               setAnimationAction('Idle');
+            }, 3000);
+
+            peaceSignCooldown.current = true;
+            // Longer cooldown for animations
+            setTimeout(() => {
               peaceSignCooldown.current = false;
-              roarTimeoutRef.current = null;
-            }, 5000);
+            }, 4000);
           }
           break;
 
@@ -192,8 +177,8 @@ export function useGestureActions(
       mergedConfig.rotationSensitivity,
       mergedConfig.zoomSensitivity,
       setExplodeFactor,
-      cycleScanMode,
-      toggleCallouts,
+      scanMode,
+      setScanMode,
       setAnimationAction,
     ]
   );
@@ -212,7 +197,6 @@ declare global {
   interface WindowEventMap {
     'gesture:rotate': CustomEvent<{ deltaX: number; deltaY: number }>;
     'gesture:zoom': CustomEvent<{ value: number }>;
-    'gesture:pan': CustomEvent<{ deltaX: number; deltaY: number }>;
   }
 }
 

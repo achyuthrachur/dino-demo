@@ -353,7 +353,7 @@ const tyrannosaurusRex: SpecimenData = {
   group: 'tyrannosaur',
   models: {
     skeleton: '/models/tyrannosaurus-rex/skeleton.glb',
-    skin: '/models/tyrannosaurus-rex/skin.glb',
+    skin: '/models/tyrannosaurus-rex/skin-animated.glb',
     fossil: '/models/tyrannosaurus-rex/fossil.glb',
   },
   variants: [
@@ -456,19 +456,10 @@ const tyrannosaurusRex: SpecimenData = {
 // Exports
 // -----------------------------------------------------------------------------
 
-/** All specimens in the registry */
+/** All specimens in the registry (T-Rex only) */
 export const SPECIMENS: SpecimenData[] = [
-  velociraptor,
-  deinonychus,
-  utahraptor,
-  microraptor,
   tyrannosaurusRex,
 ];
-
-/** Filtered array of raptor group specimens */
-export const RAPTORS: SpecimenData[] = SPECIMENS.filter(
-  (specimen) => specimen.group === 'raptor'
-);
 
 /**
  * Retrieves a specimen by its unique ID

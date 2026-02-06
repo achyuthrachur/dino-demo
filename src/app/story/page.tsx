@@ -62,7 +62,7 @@ function ChapterOverlay({
     <section
       id={chapter.id}
       data-chapter-index={index}
-      className="chapter-section min-h-screen flex items-center relative"
+      className={`chapter-section min-h-screen flex items-center relative ${index === 0 ? 'chapter-visible' : ''}`}
     >
       <div className="max-w-md mx-auto px-6 py-20 md:ml-12 lg:ml-20 pointer-events-auto">
         <div className="glass-strong rounded-xl p-6 space-y-4 relative overflow-hidden">

@@ -228,11 +228,14 @@ interface ModelSpecimenProps {
 function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(modelUrl);
-  const { actions, mixer } = useAnimations(animations, groupRef);
+  // Safe useAnimations call (drei handles empty/undefined animations gracefully)
+  const { actions } = useAnimations(animations || [], groupRef);
 
   const explodeFactor = useExhibitStore((state) => state.explodeFactor);
   const showCallouts = useExhibitStore((state) => state.showCallouts);
   const scanMode = useExhibitStore((state) => state.scanMode);
+  // Check if animationAction exists on store (in case store was not updated)
+  // @ts-ignore
   const animationAction = useExhibitStore((state) => state.animationAction);
 
   // Discovered bones from the model
@@ -353,10 +356,10 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
   useEffect(() => {
     if (!actions || Object.keys(actions).length === 0) return;
 
-    // The rigged model has a single clip "Take 01"
-    // Map animation actions to playback behavior
-    const clipName = Object.keys(actions)[0]; // Use first available clip
-    const action = actions[clipName];
+    // Use specific clip if found, otherwise first available
+    // T-Rex rigged model likely has "Idle", "Roar", etc. or just "Take 01"
+    let action = actions[animationAction] || actions[Object.keys(actions)[0]];
+    
     if (!action) return;
 
     switch (animationAction) {

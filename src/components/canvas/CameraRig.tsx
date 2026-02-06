@@ -53,6 +53,10 @@ export function CameraRig({ specimen }: CameraRigProps) {
   const animationProgress = useRef(0);
   const previousSpecimenId = useRef<string | null>(null);
 
+  // User interaction tracking
+  const userInteracting = useRef(false);
+  const lastInteractionTime = useRef(0);
+
   // Target positions for smooth interpolation
   const targetPosition = useRef(new THREE.Vector3(5, 3, 8));
   const targetLookAt = useRef(new THREE.Vector3(0, 1, 0));
@@ -73,6 +77,7 @@ export function CameraRig({ specimen }: CameraRigProps) {
       setAnimationPhase('whip-out');
       animationProgress.current = 0;
       basePosition.current.copy(camera.position);
+      userInteracting.current = false; // Reset interaction on specimen change
 
       // Calculate whip direction (perpendicular to camera direction)
       const cameraDir = new THREE.Vector3();
@@ -85,6 +90,81 @@ export function CameraRig({ specimen }: CameraRigProps) {
 
     previousSpecimenId.current = selectedSpecimenId;
   }, [selectedSpecimenId, camera]);
+
+  // Track user interaction with controls
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const handleInteractionStart = () => {
+      userInteracting.current = true;
+      lastInteractionTime.current = Date.now();
+    };
+
+    const handleInteractionEnd = () => {
+      userInteracting.current = false;
+      lastInteractionTime.current = Date.now();
+    };
+
+    controls.addEventListener('start', handleInteractionStart);
+    controls.addEventListener('end', handleInteractionEnd);
+
+    return () => {
+      controls.removeEventListener('start', handleInteractionStart);
+      controls.removeEventListener('end', handleInteractionEnd);
+    };
+  }, []);
+
+  // Listen for gesture events and apply to camera controls
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const handleGestureRotate = (e: CustomEvent<{ deltaX: number; deltaY: number }>) => {
+      // Apply rotation delta to orbit controls
+      const rotateSpeed = 0.005;
+      controls.object.position.applyAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        -e.detail.deltaX * rotateSpeed
+      );
+
+      // Update controls
+      controls.update();
+
+      // Mark as user interaction
+      userInteracting.current = true;
+      lastInteractionTime.current = Date.now();
+    };
+
+    const handleGestureZoom = (e: CustomEvent<{ value: number }>) => {
+      // Apply zoom by adjusting camera distance
+      const zoomSpeed = 5;
+      const currentDistance = controls.object.position.length();
+      const targetDistance = THREE.MathUtils.lerp(
+        controls.minDistance,
+        controls.maxDistance,
+        1 - e.detail.value
+      );
+
+      // Smoothly interpolate to target distance
+      const newDistance = THREE.MathUtils.lerp(currentDistance, targetDistance, 0.1);
+      controls.object.position.normalize().multiplyScalar(newDistance);
+
+      controls.update();
+
+      // Mark as user interaction
+      userInteracting.current = true;
+      lastInteractionTime.current = Date.now();
+    };
+
+    window.addEventListener('gesture:rotate', handleGestureRotate as EventListener);
+    window.addEventListener('gesture:zoom', handleGestureZoom as EventListener);
+
+    return () => {
+      window.removeEventListener('gesture:rotate', handleGestureRotate as EventListener);
+      window.removeEventListener('gesture:zoom', handleGestureZoom as EventListener);
+    };
+  }, []);
 
   // Get camera position based on target and specimen
   useEffect(() => {
@@ -107,11 +187,12 @@ export function CameraRig({ specimen }: CameraRigProps) {
     }
 
     // Apply specimen scale to camera distance
+    // Note: scale < 1 means model is smaller, so we move camera closer (multiply)
     const scale = specimen.presentation.scale;
     targetPosition.current.set(
-      newPosition[0] / scale,
-      newPosition[1] / scale,
-      newPosition[2] / scale
+      newPosition[0] * scale,
+      newPosition[1] * scale,
+      newPosition[2] * scale
     );
 
     // Adjust look-at based on camera target
@@ -209,17 +290,22 @@ export function CameraRig({ specimen }: CameraRigProps) {
     }
 
     // Normal smooth camera interpolation (when not animating)
-    const lerpFactor = 1 - Math.pow(0.001, delta);
+    // Only auto-lerp if user hasn't interacted recently (within 2 seconds)
+    const timeSinceInteraction = Date.now() - lastInteractionTime.current;
+    const shouldAutoPosition = !userInteracting.current && timeSinceInteraction > 2000;
 
-    camera.position.lerp(targetPosition.current, lerpFactor * 2);
+    if (shouldAutoPosition) {
+      const lerpFactor = 1 - Math.pow(0.001, delta);
+      camera.position.lerp(targetPosition.current, lerpFactor * 2);
 
-    // Update OrbitControls target
-    if (controls.target) {
-      controls.target.lerp(targetLookAt.current, lerpFactor * 2);
+      // Update OrbitControls target
+      if (controls.target) {
+        controls.target.lerp(targetLookAt.current, lerpFactor * 2);
+      }
     }
 
-    // Auto-rotate when in presenter mode
-    if (presenterActive) {
+    // Auto-rotate when in presenter mode (but don't force camera position)
+    if (presenterActive && !userInteracting.current) {
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.5;
     } else {
@@ -238,9 +324,9 @@ export function CameraRig({ specimen }: CameraRigProps) {
       maxDistance={30}
       minPolarAngle={Math.PI * 0.1}
       maxPolarAngle={Math.PI * 0.85}
-      enablePan={!presenterActive && animationPhase === 'idle'}
-      enableZoom={!presenterActive && animationPhase === 'idle'}
-      enableRotate={!presenterActive && animationPhase === 'idle'}
+      enablePan={animationPhase === 'idle'}
+      enableZoom={animationPhase === 'idle'}
+      enableRotate={animationPhase === 'idle'}
       target={[0, 1, 0]}
     />
   );
