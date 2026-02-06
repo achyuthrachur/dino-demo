@@ -56,7 +56,7 @@ export const GESTURE_DEADZONE = 0.05;
 export const GESTURE_HOLD_TIME = 1000;
 
 /** Smoothing factor for gesture values (0-1, lower = more smoothing) */
-export const SMOOTHING_FACTOR = 0.3;
+export const SMOOTHING_FACTOR = 0.6; // Increased from 0.3 for faster stabilization
 
 /** Minimum confidence to consider a gesture valid */
 export const MIN_CONFIDENCE = 0.7;
@@ -186,6 +186,7 @@ export class GestureRecognizer {
 
   /**
    * Recognize gesture from detected hands
+   * SIMPLIFIED: Only detects peace_sign and palm_hold (2 gestures total)
    */
   recognizeGesture(hands: DetectedHand[]): GestureState {
     if (hands.length === 0) {
@@ -196,95 +197,46 @@ export class GestureRecognizer {
 
     const handCount = hands.length;
 
-    // Two-hand gestures
-    if (hands.length === 2) {
-      // Check for two-hand pinch spread (zoom)
-      const pinchSpread = this.detectTwoHandPinchSpread(hands);
-      if (pinchSpread.detected) {
+    // Only process single hand gestures (peace sign and palm hold)
+    if (hands.length === 1) {
+      const hand = hands[0];
+
+      // Check for peace sign (V) - higher priority
+      const peaceSign = this.detectPeaceSign(hand);
+      if (peaceSign.detected) {
         this.palmHoldStart = null;
+        this.lastPinchPosition = null;
         return {
-          type: 'pinch_spread',
-          confidence: pinchSpread.confidence,
-          value: this.smoothValue(pinchSpread.value),
+          type: 'peace_sign',
+          confidence: peaceSign.confidence,
           handCount,
         };
       }
 
-      // Check for two open palms (explode)
-      const openPalms = this.detectTwoOpenPalms(hands);
-      if (openPalms.detected) {
-        this.palmHoldStart = null;
-        this.lastFistCenter = null;
+      // Check for open palm hold (cycle view mode)
+      const openPalm = this.detectOpenPalm(hand);
+      if (openPalm.detected) {
+        const now = Date.now();
+        if (this.palmHoldStart === null) {
+          this.palmHoldStart = now;
+        } else if (now - this.palmHoldStart >= GESTURE_HOLD_TIME) {
+          this.palmHoldStart = null; // Reset after trigger
+          return {
+            type: 'palm_hold',
+            confidence: openPalm.confidence,
+            handCount,
+          };
+        }
+        // Still holding, return the gesture state but not triggered yet
         return {
-          type: 'open_palms',
-          confidence: openPalms.confidence,
-          value: this.smoothValue(openPalms.value),
-          handCount,
-        };
-      }
-
-      // Check for two closed fists (pan)
-      const closedFists = this.detectTwoClosedFists(hands);
-      if (closedFists.detected) {
-        this.palmHoldStart = null;
-        return {
-          type: 'closed_fists',
-          confidence: closedFists.confidence,
-          delta: closedFists.delta,
+          type: 'none',
+          confidence: openPalm.confidence * ((now - this.palmHoldStart) / GESTURE_HOLD_TIME),
           handCount,
         };
       }
     }
 
-    // Single hand gestures
-    const hand = hands[0];
-
-    // Check for peace sign (V)
-    const peaceSign = this.detectPeaceSign(hand);
-    if (peaceSign.detected) {
-      this.palmHoldStart = null;
-      this.lastPinchPosition = null;
-      return {
-        type: 'peace_sign',
-        confidence: peaceSign.confidence,
-        handCount,
-      };
-    }
-
-    // Check for pinch drag (rotate)
-    const pinchDrag = this.detectPinchDrag(hand);
-    if (pinchDrag.detected) {
-      this.palmHoldStart = null;
-      return {
-        type: 'pinch_drag',
-        confidence: pinchDrag.confidence,
-        delta: pinchDrag.delta,
-        handCount,
-      };
-    }
-
-    // Check for open palm hold (toggle callouts)
-    const openPalm = this.detectOpenPalm(hand);
-    if (openPalm.detected) {
-      const now = Date.now();
-      if (this.palmHoldStart === null) {
-        this.palmHoldStart = now;
-      } else if (now - this.palmHoldStart >= GESTURE_HOLD_TIME) {
-        this.palmHoldStart = null; // Reset after trigger
-        return {
-          type: 'palm_hold',
-          confidence: openPalm.confidence,
-          handCount,
-        };
-      }
-      // Still holding, return the gesture state but not triggered yet
-      return {
-        type: 'none',
-        confidence: openPalm.confidence * ((now - this.palmHoldStart) / GESTURE_HOLD_TIME),
-        handCount,
-      };
-    }
-
+    // No recognized gesture or multiple hands
     this.palmHoldStart = null;
     this.lastPinchPosition = null;
     return { type: 'none', confidence: 0, handCount };
@@ -520,7 +472,7 @@ export class GestureRecognizer {
     const fingerSpread = Math.abs(
       landmarks[LANDMARKS.INDEX_TIP].x - landmarks[LANDMARKS.MIDDLE_TIP].x
     );
-    const spreadEnough = fingerSpread > 0.03;
+    const spreadEnough = fingerSpread > 0.08; // Increased from 0.03 to reduce false positives
 
     return {
       detected: detected && spreadEnough,

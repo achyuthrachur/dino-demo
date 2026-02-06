@@ -357,9 +357,24 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
     if (!actions || Object.keys(actions).length === 0) return;
 
     // Use specific clip if found, otherwise first available
-    // T-Rex rigged model likely has "Idle", "Roar", etc. or just "Take 01"
-    let action = actions[animationAction] || actions[Object.keys(actions)[0]];
-    
+    // T-Rex rigged model has "Take 01" as the clip name - map it to our action names
+    // Animation name mapping (GLB clip name → Action name)
+    const ANIMATION_MAP: Record<string, string> = {
+      'Roar': 'Take 01',
+      'Walk': 'Take 01',  // Could be different clip if available
+      'Idle': 'Take 01',  // Could be different clip if available
+    };
+
+    // Get the actual GLB clip name for the requested action
+    const glbClipName = ANIMATION_MAP[animationAction] || animationAction;
+    let action = actions[glbClipName];
+
+    // Log available animations if requested action not found
+    if (!action && Object.keys(actions).length > 0) {
+      console.warn(`Animation "${glbClipName}" (for ${animationAction}) not found. Available:`, Object.keys(actions));
+      action = actions[Object.keys(actions)[0]]; // Use first available as fallback
+    }
+
     if (!action) return;
 
     switch (animationAction) {
@@ -413,11 +428,12 @@ function ModelSpecimen({ data, modelUrl }: ModelSpecimenProps) {
 
           case 'skin':
             if (isSkinned) {
-              child.material = new THREE.MeshStandardMaterial({
+              // Restore original material or use solid skin rendering
+              child.material = child.userData.originalMaterial || new THREE.MeshStandardMaterial({
                 color: new THREE.Color(data.presentation.color),
-                transparent: true,
-                opacity: 0.9,
-                wireframe: true,
+                roughness: 0.5,
+                metalness: 0.1,
+                // NO wireframe - show solid skin mesh
               });
             } else {
               hologramMaterial.uniforms.uColor.value = new THREE.Color(data.presentation.color);

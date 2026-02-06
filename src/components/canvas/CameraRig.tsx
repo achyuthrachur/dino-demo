@@ -290,9 +290,10 @@ export function CameraRig({ specimen }: CameraRigProps) {
     }
 
     // Normal smooth camera interpolation (when not animating)
-    // Only auto-lerp if user hasn't interacted recently (within 2 seconds)
+    // Only auto-lerp if user hasn't interacted recently (within 5 seconds)
+    // Increased from 2s to 5s to prevent random resets during momentary gesture loss
     const timeSinceInteraction = Date.now() - lastInteractionTime.current;
-    const shouldAutoPosition = !userInteracting.current && timeSinceInteraction > 2000;
+    const shouldAutoPosition = !userInteracting.current && timeSinceInteraction > 5000;
 
     if (shouldAutoPosition) {
       const lerpFactor = 1 - Math.pow(0.001, delta);

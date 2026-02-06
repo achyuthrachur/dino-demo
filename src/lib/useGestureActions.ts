@@ -34,6 +34,13 @@ const DEFAULT_CONFIG: Required<GestureActionConfig> = {
   minConfidence: 0.7,
 };
 
+// Confidence hysteresis thresholds to prevent flickering
+const CONFIDENCE_THRESHOLD_ON = 0.75;   // Must exceed this to START gesture
+const CONFIDENCE_THRESHOLD_OFF = 0.65;  // Must drop below this to END gesture
+
+// Palm hold requires 1 second of stable detection
+const PALM_HOLD_DURATION = 1000;
+
 // -----------------------------------------------------------------------------
 // Hook Implementation
 // -----------------------------------------------------------------------------
@@ -47,6 +54,7 @@ export function useGestureActions(
   const setExplodeFactor = useExhibitStore((state) => state.setExplodeFactor);
   const scanMode = useExhibitStore((state) => state.scanMode);
   const setScanMode = useExhibitStore((state) => state.setScanMode);
+  const cycleScanMode = useExhibitStore((state) => state.cycleScanMode);
   const setAnimationAction = useExhibitStore((state) => state.setAnimationAction);
 
   // Refs to track state across frames
@@ -55,18 +63,55 @@ export function useGestureActions(
   const peaceSignCooldown = useRef(false);
   const palmHoldTriggered = useRef(false);
 
+  // Gesture stability tracking
+  const activeGestureRef = useRef<string | null>(null);
+  const palmHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Reset tracking refs
   const reset = useCallback(() => {
     lastZoomValue.current = null;
     lastExplodeValue.current = null;
     peaceSignCooldown.current = false;
     palmHoldTriggered.current = false;
+    activeGestureRef.current = null;
+    if (palmHoldTimerRef.current) {
+      clearTimeout(palmHoldTimerRef.current);
+      palmHoldTimerRef.current = null;
+    }
   }, []);
 
   // Main gesture handler
   const handleGesture = useCallback(
     (gesture: GestureState) => {
-      // Check minimum confidence
+      // Log all gestures in dev mode (except 'none')
+      if (process.env.NODE_ENV === 'development' && gesture.type !== 'none') {
+        console.log('👋 Gesture:', gesture.type, 'Confidence:', gesture.confidence.toFixed(2));
+      }
+
+      // Confidence hysteresis to prevent flickering
+      const isActive = activeGestureRef.current === gesture.type;
+
+      if (isActive) {
+        // Already active - check if should deactivate
+        if (gesture.confidence < CONFIDENCE_THRESHOLD_OFF) {
+          activeGestureRef.current = null;
+          // Clear palm hold timer if gesture lost
+          if (palmHoldTimerRef.current) {
+            clearTimeout(palmHoldTimerRef.current);
+            palmHoldTimerRef.current = null;
+          }
+          palmHoldTriggered.current = false;
+          return; // Cancel gesture
+        }
+      } else {
+        // Not active - check if should activate
+        if (gesture.confidence < CONFIDENCE_THRESHOLD_ON) {
+          return; // Don't activate yet
+        }
+        activeGestureRef.current = gesture.type;
+      }
+
+      // Legacy fallback for old confidence check
       if (gesture.confidence < mergedConfig.minConfidence) {
         // Reset tracking when no gesture detected
         if (gesture.type === 'none') {
@@ -134,13 +179,21 @@ export function useGestureActions(
           break;
 
         // -----------------------------------------------------------------
-        // Palm Hold (1 second) -> Toggle Skin
+        // Palm Hold (1 second) -> Cycle View Mode (mesh → bones → skin → mesh)
         // -----------------------------------------------------------------
         case 'palm_hold':
           if (!palmHoldTriggered.current) {
-            // Toggle between skeleton and skin
-            setScanMode(scanMode === 'skeleton' ? 'skin' : 'skeleton');
-            palmHoldTriggered.current = true;
+            // Start timer if not already running
+            if (!palmHoldTimerRef.current) {
+              console.log('🖐️ Palm hold started - waiting 1s for stable hold...');
+              palmHoldTimerRef.current = setTimeout(() => {
+                // Cycle through modes after 1 second of stable hold
+                cycleScanMode(); // Cycle through: xray → skeleton → skin → xray
+                console.log('🔄 Palm hold confirmed! Cycling scan mode');
+                palmHoldTriggered.current = true;
+                palmHoldTimerRef.current = null;
+              }, PALM_HOLD_DURATION);
+            }
           }
           break;
 
@@ -148,20 +201,23 @@ export function useGestureActions(
         // Peace Sign -> Roar (Trigger Animation)
         // -----------------------------------------------------------------
         case 'peace_sign':
+          console.log('✌️ Peace sign detected! Cooldown:', peaceSignCooldown.current);
           if (!peaceSignCooldown.current) {
             // Trigger Roar
+            console.log('🦖 Triggering Roar animation');
             setAnimationAction('Roar');
 
-            // Reset to Idle after 3 seconds
+            // Reset to Idle after 5 seconds (increased from 3)
             setTimeout(() => {
+              console.log('↩️ Reverting to Idle');
               setAnimationAction('Idle');
-            }, 3000);
+            }, 5000);
 
             peaceSignCooldown.current = true;
-            // Longer cooldown for animations
+            // Cooldown matches animation duration
             setTimeout(() => {
               peaceSignCooldown.current = false;
-            }, 4000);
+            }, 5000);
           }
           break;
 
@@ -169,6 +225,11 @@ export function useGestureActions(
         default:
           // Reset one-shot triggers when gesture ends
           palmHoldTriggered.current = false;
+          // Clear palm hold timer if gesture lost
+          if (palmHoldTimerRef.current) {
+            clearTimeout(palmHoldTimerRef.current);
+            palmHoldTimerRef.current = null;
+          }
           break;
       }
     },
@@ -179,6 +240,7 @@ export function useGestureActions(
       setExplodeFactor,
       scanMode,
       setScanMode,
+      cycleScanMode,
       setAnimationAction,
     ]
   );

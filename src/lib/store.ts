@@ -84,8 +84,8 @@ const initialState = {
 // -----------------------------------------------------------------------------
 // Scan Mode Cycle Order
 // -----------------------------------------------------------------------------
-
-const scanModeOrder: ScanMode[] = ['skeleton', 'skin', 'xray'];
+// Cycle order: mesh (xray) → bones (skeleton) → skin → back to mesh
+const scanModeOrder: ScanMode[] = ['xray', 'skeleton', 'skin'];
 
 // -----------------------------------------------------------------------------
 // Store Creation
