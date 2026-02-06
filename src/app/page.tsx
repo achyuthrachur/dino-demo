@@ -4,7 +4,7 @@
 // Main Exhibit Page - Digital Museum: Infinite Mesozoic
 // =============================================================================
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { useExhibitStore } from '@/lib/store';
@@ -214,6 +214,22 @@ function BottomDock() {
 // -----------------------------------------------------------------------------
 
 export default function ExhibitPage() {
+  const setPresenterActive = useExhibitStore((state) => state.setPresenterActive);
+  const presenterActive = useExhibitStore((state) => state.presenterActive);
+
+  // P key toggles presenter mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P') {
+        // Don't trigger if user is typing in an input
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        setPresenterActive(!presenterActive);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [presenterActive, setPresenterActive]);
+
   return (
     <main
       className="relative h-screen w-screen overflow-hidden"
