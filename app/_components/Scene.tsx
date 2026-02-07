@@ -1,12 +1,20 @@
 'use client';
 
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, useGLTF } from '@react-three/drei';
+import { OrbitControls, useGLTF, Center, Bounds, useBounds } from '@react-three/drei';
 import { useRef, useEffect, Suspense } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CAMERA } from '../_lib/motion';
 import { useStore } from '../_lib/store';
 import * as THREE from 'three';
+
+function FitCamera() {
+  const bounds = useBounds();
+  useEffect(() => {
+    bounds.refresh().clip().fit();
+  }, [bounds]);
+  return null;
+}
 
 function TRexModel() {
   const groupRef = useRef<THREE.Group>(null);
@@ -14,20 +22,6 @@ function TRexModel() {
   const setSceneReady = useStore((s) => s.setSceneReady);
 
   useEffect(() => {
-    if (groupRef.current) {
-      // Center the model based on its bounding box
-      const box = new THREE.Box3().setFromObject(groupRef.current);
-      const center = box.getCenter(new THREE.Vector3());
-      groupRef.current.position.sub(center);
-
-      // Always normalize so the longest axis fits within ~3 units
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 0) {
-        const scale = 3 / maxDim;
-        groupRef.current.scale.setScalar(scale);
-      }
-    }
     setSceneReady(true);
   }, [setSceneReady]);
 
@@ -40,7 +34,9 @@ function TRexModel() {
 
   return (
     <group ref={groupRef}>
-      <primitive object={scene.clone()} />
+      <Center>
+        <primitive object={scene.clone()} />
+      </Center>
     </group>
   );
 }
@@ -72,20 +68,24 @@ export function Scene() {
       <directionalLight intensity={1.1} position={[3, 6, 4]} />
       <directionalLight intensity={0.6} position={[-4, 2, -3]} />
 
-      {/* Model with Suspense */}
+      {/* Model with Suspense + auto-framing */}
       <Suspense fallback={<LoadingFallback />}>
-        <TRexModel />
+        <Bounds fit clip observe={false} margin={1.5}>
+          <FitCamera />
+          <TRexModel />
+        </Bounds>
       </Suspense>
 
       {/* Controls */}
       <OrbitControls
+        makeDefault
         enableDamping
         dampingFactor={0.08}
         rotateSpeed={0.6}
         zoomSpeed={0.8}
         panSpeed={0.6}
         minDistance={2}
-        maxDistance={15}
+        maxDistance={30}
       />
     </Canvas>
   );
