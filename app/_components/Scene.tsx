@@ -18,7 +18,7 @@ function LoadingFallback() {
 export function Scene() {
   return (
     <Canvas
-      camera={{ position: [4, 2, 8], fov: 45 }}
+      camera={{ position: [12, 4, 18], fov: 45 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       style={{
         position: 'fixed',
@@ -50,7 +50,7 @@ export function Scene() {
         zoomSpeed={0.8}
         panSpeed={0.6}
         minDistance={2}
-        maxDistance={30}
+        maxDistance={60}
       />
     </Canvas>
   );
