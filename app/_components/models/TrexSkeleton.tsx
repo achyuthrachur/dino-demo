@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
-import { useGLTF, Center } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { MODEL_XFORM } from '../../_lib/models';
@@ -19,6 +19,12 @@ export function TrexSkeleton({ opacity }: Props) {
 
   const clonedScene = useMemo(() => scene.clone() as THREE.Group, [scene]);
 
+  const centerOffset = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(clonedScene);
+    const center = box.getCenter(new THREE.Vector3());
+    return [-center.x, -center.y, -center.z] as [number, number, number];
+  }, [clonedScene]);
+
   useEffect(() => {
     ensureTransparent(clonedScene);
     setSceneReady(true);
@@ -29,14 +35,15 @@ export function TrexSkeleton({ opacity }: Props) {
   });
 
   const xform = MODEL_XFORM.skeleton;
+  const finalPosition: [number, number, number] = [
+    centerOffset[0] + xform.position[0],
+    centerOffset[1] + xform.position[1],
+    centerOffset[2] + xform.position[2],
+  ];
 
   return (
-    <group position={xform.position}>
-      <group ref={groupRef} rotation={xform.rotation} scale={xform.scale}>
-        <Center>
-          <primitive object={clonedScene} />
-        </Center>
-      </group>
+    <group ref={groupRef} position={finalPosition} rotation={xform.rotation} scale={xform.scale}>
+      <primitive object={clonedScene} />
     </group>
   );
 }

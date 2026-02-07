@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useMemo } from 'react';
-import { useGLTF, useAnimations, Center } from '@react-three/drei';
+import { useGLTF, useAnimations } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { MODEL_XFORM } from '../../_lib/models';
@@ -107,20 +107,27 @@ export function TrexSkin({ opacity }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roarRequested]);
 
+  const centerOffset = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const center = box.getCenter(new THREE.Vector3());
+    return [-center.x, -center.y, -center.z] as [number, number, number];
+  }, [scene]);
+
   // Apply opacity per frame
   useFrame(() => {
     setSceneOpacity(scene, opacity.current);
   });
 
   const xform = MODEL_XFORM.skin;
+  const finalPosition: [number, number, number] = [
+    centerOffset[0] + xform.position[0],
+    centerOffset[1] + xform.position[1],
+    centerOffset[2] + xform.position[2],
+  ];
 
   return (
-    <group position={xform.position}>
-      <group ref={groupRef} rotation={xform.rotation} scale={xform.scale}>
-        <Center>
-          <primitive object={scene} />
-        </Center>
-      </group>
+    <group ref={groupRef} position={finalPosition} rotation={xform.rotation} scale={xform.scale}>
+      <primitive object={scene} />
     </group>
   );
 }
