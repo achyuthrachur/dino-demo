@@ -1,34 +1,19 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { useEffect } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
+import { OrbitControls, Environment } from '@react-three/drei';
 import { Suspense } from 'react';
 import * as THREE from 'three';
 import { TrexScene } from './TrexScene';
 import { CameraRig } from './CameraRig';
-import { useStore } from '../_lib/store';
-
-const DARK_BG = new THREE.Color('#07090D');
-const LIGHT_BG = new THREE.Color('#F5F5F0');
 
 function SceneBackground() {
   const { scene } = useThree();
-  const mode = useStore((s) => s.mode);
-  const targetColor = useRef(new THREE.Color('#07090D'));
 
   useEffect(() => {
-    if (!scene.background) {
-      scene.background = new THREE.Color('#07090D');
-    }
-    targetColor.current.copy(mode === 'skin' ? LIGHT_BG : DARK_BG);
-  }, [mode, scene]);
-
-  useFrame(() => {
-    if (scene.background instanceof THREE.Color) {
-      scene.background.lerp(targetColor.current, 0.06);
-    }
-  });
+    scene.background = new THREE.Color('#07090D');
+  }, [scene]);
 
   return null;
 }
@@ -55,13 +40,20 @@ export function Scene() {
         height: '100vh',
       }}
     >
-      {/* Background color — dark for skeleton, light for skin */}
+      {/* Background color */}
       <SceneBackground />
+
+      {/* Environment map — subtle reflections on skin */}
+      <Environment preset="studio" environmentIntensity={0.4} />
 
       {/* Lighting */}
       <ambientLight intensity={0.7} />
       <directionalLight intensity={1.1} position={[3, 6, 4]} />
       <directionalLight intensity={0.6} position={[-4, 2, -3]} />
+
+      {/* Rim lights — teal-tinted edge glow from behind */}
+      <pointLight color="#7CF7C6" intensity={8} position={[-6, 4, -8]} distance={30} decay={2} />
+      <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
 
       {/* Models */}
       <Suspense fallback={<LoadingFallback />}>
