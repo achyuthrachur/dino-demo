@@ -30,7 +30,7 @@ export function TrexSkin({ opacity }: Props) {
     return pickClips(names);
   }, [animations]);
 
-  // On mount: stop all animations immediately (GLBs can have auto-play baked in)
+  // On mount: stop all animations immediately
   useEffect(() => {
     mixer.stopAllAction();
   }, [mixer]);
@@ -55,12 +55,10 @@ export function TrexSkin({ opacity }: Props) {
   // Idle animation — only when in skin mode
   useEffect(() => {
     if (mode !== 'skin') {
-      // Not in skin mode — stop everything
       stopAll();
       return;
     }
 
-    // In skin mode — start idle if available
     if (!clipMap.idle || !actions[clipMap.idle]) return;
     const idleAction = actions[clipMap.idle]!;
     idleAction.reset().fadeIn(0.3).play();
@@ -75,7 +73,6 @@ export function TrexSkin({ opacity }: Props) {
   useEffect(() => {
     if (!roarRequested) return;
 
-    // Clear immediately so it doesn't re-trigger
     clearRoarRequest();
 
     if (!clipMap.roar || !actions[clipMap.roar] || mode !== 'skin') return;
@@ -85,7 +82,6 @@ export function TrexSkin({ opacity }: Props) {
 
     isPlayingRoar.current = true;
 
-    // Fade out idle, play roar
     if (idleAction) idleAction.fadeOut(0.3);
 
     roarAction.reset();
@@ -93,7 +89,6 @@ export function TrexSkin({ opacity }: Props) {
     roarAction.clampWhenFinished = true;
     roarAction.fadeIn(0.3).play();
 
-    // When roar finishes, resume idle
     const onFinished = (e: { action: THREE.AnimationAction }) => {
       if (e.action === roarAction) {
         isPlayingRoar.current = false;
@@ -120,15 +115,12 @@ export function TrexSkin({ opacity }: Props) {
   const xform = MODEL_XFORM.skin;
 
   return (
-    <group
-      ref={groupRef}
-      position={xform.position}
-      rotation={xform.rotation}
-      scale={xform.scale}
-    >
-      <Center>
-        <primitive object={scene} />
-      </Center>
+    <group position={xform.position}>
+      <group ref={groupRef} rotation={xform.rotation} scale={xform.scale}>
+        <Center>
+          <primitive object={scene} />
+        </Center>
+      </group>
     </group>
   );
 }

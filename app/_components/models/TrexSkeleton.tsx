@@ -17,7 +17,6 @@ export function TrexSkeleton({ opacity }: Props) {
   const { scene } = useGLTF('/models/trex_skeleton.glb');
   const setSceneReady = useStore((s) => s.setSceneReady);
 
-  // Clone immediately during render (not in useEffect) so it's available on first paint
   const clonedScene = useMemo(() => scene.clone() as THREE.Group, [scene]);
 
   useEffect(() => {
@@ -32,15 +31,12 @@ export function TrexSkeleton({ opacity }: Props) {
   const xform = MODEL_XFORM.skeleton;
 
   return (
-    <group
-      ref={groupRef}
-      position={xform.position}
-      rotation={xform.rotation}
-      scale={xform.scale}
-    >
-      <Center>
-        <primitive object={clonedScene} />
-      </Center>
+    <group position={xform.position}>
+      <group ref={groupRef} rotation={xform.rotation} scale={xform.scale}>
+        <Center>
+          <primitive object={clonedScene} />
+        </Center>
+      </group>
     </group>
   );
 }
