@@ -26,36 +26,31 @@ export function UIOverlay() {
       }}
       style={{
         position: 'fixed',
-        bottom: '2rem',
+        bottom: '1.5rem',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 10,
-        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1.5rem',
       }}
       className="glass-panel"
     >
       {/* Title */}
       <h1
         style={{
-          fontSize: '1.75rem',
+          fontSize: '1rem',
           fontWeight: 700,
-          marginBottom: '1rem',
           color: 'var(--accent)',
           letterSpacing: '0.08em',
+          whiteSpace: 'nowrap',
         }}
       >
         TYRANNOSAURUS REX
       </h1>
 
       {/* Mode buttons */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '0.75rem',
-          justifyContent: 'center',
-          marginBottom: '1rem',
-        }}
-      >
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
         <button
           onClick={() => requestMode('skeleton')}
           disabled={transitioning}
@@ -113,7 +108,6 @@ export function UIOverlay() {
               duration: DURATION_MS.uiSlide / 1000,
               ease: [...EASING.framerCinematic] as [number, number, number, number],
             }}
-            style={{ marginBottom: '1rem' }}
           >
             <button
               onClick={mode === 'skeleton' ? triggerWalk : triggerRoar}
@@ -139,7 +133,7 @@ export function UIOverlay() {
       </AnimatePresence>
 
       {/* Animated mode badge */}
-      <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', position: 'relative', height: '1.2em' }}>
+      <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', whiteSpace: 'nowrap' }}>
         <AnimatePresence mode="wait">
           <motion.span
             key={mode}
