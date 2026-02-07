@@ -12,15 +12,20 @@ interface AppState {
   skinReady: boolean;
   hasRoarClip: boolean;
   roarRequested: boolean;
+  hasWalkClip: boolean;
+  walkRequested: boolean;
 
   setSceneReady: (ready: boolean) => void;
   requestMode: (mode: Mode) => void;
   lockModeSwitch: (ms: number) => void;
   setSkinReady: (ready: boolean) => void;
   setHasRoarClip: (has: boolean) => void;
+  setHasWalkClip: (has: boolean) => void;
   setTransitionPhase: (phase: TransitionPhase) => void;
   triggerRoar: () => void;
   clearRoarRequest: () => void;
+  triggerWalk: () => void;
+  clearWalkRequest: () => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -31,6 +36,8 @@ export const useStore = create<AppState>((set, get) => ({
   skinReady: false,
   hasRoarClip: false,
   roarRequested: false,
+  hasWalkClip: false,
+  walkRequested: false,
 
   setSceneReady: (ready) => set({ sceneReady: ready }),
 
@@ -53,7 +60,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   setSkinReady: (ready) => set({ skinReady: ready }),
   setHasRoarClip: (has) => set({ hasRoarClip: has }),
+  setHasWalkClip: (has) => set({ hasWalkClip: has }),
   setTransitionPhase: (phase) => set({ transitionPhase: phase }),
   triggerRoar: () => set({ roarRequested: true }),
   clearRoarRequest: () => set({ roarRequested: false }),
+  triggerWalk: () => set({ walkRequested: true }),
+  clearWalkRequest: () => set({ walkRequested: false }),
 }));

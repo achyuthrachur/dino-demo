@@ -119,15 +119,12 @@ export function TrexSkin({ opacity }: Props) {
   });
 
   const xform = MODEL_XFORM.skin;
-  const finalPosition: [number, number, number] = [
-    centerOffset[0] + xform.position[0],
-    centerOffset[1] + xform.position[1],
-    centerOffset[2] + xform.position[2],
-  ];
 
   return (
-    <group ref={groupRef} position={finalPosition} rotation={xform.rotation} scale={xform.scale}>
-      <primitive object={scene} />
+    <group position={xform.position} rotation={xform.rotation} scale={xform.scale}>
+      <group ref={groupRef} position={centerOffset}>
+        <primitive object={scene} />
+      </group>
     </group>
   );
 }

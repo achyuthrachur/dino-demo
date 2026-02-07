@@ -11,6 +11,8 @@ export function UIOverlay() {
   const transitionPhase = useStore((s) => s.transitionPhase);
   const hasRoarClip = useStore((s) => s.hasRoarClip);
   const triggerRoar = useStore((s) => s.triggerRoar);
+  const hasWalkClip = useStore((s) => s.hasWalkClip);
+  const triggerWalk = useStore((s) => s.triggerWalk);
 
   const transitioning = transitionPhase !== 'idle';
 
@@ -99,10 +101,11 @@ export function UIOverlay() {
         </button>
       </div>
 
-      {/* Roar button (skin mode only) */}
+      {/* Animate button — walk for skeleton, roar for skin */}
       <AnimatePresence>
-        {mode === 'skin' && (
+        {((mode === 'skeleton' && hasWalkClip) || (mode === 'skin' && hasRoarClip)) && (
           <motion.div
+            key={mode}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
@@ -113,23 +116,23 @@ export function UIOverlay() {
             style={{ marginBottom: '1rem' }}
           >
             <button
-              onClick={triggerRoar}
-              disabled={!hasRoarClip || transitioning}
-              title={!hasRoarClip ? 'No roar clip available' : 'Play roar animation'}
+              onClick={mode === 'skeleton' ? triggerWalk : triggerRoar}
+              disabled={transitioning}
+              title={mode === 'skeleton' ? 'Play walk animation' : 'Play roar animation'}
               style={{
                 padding: '0.5rem 1.25rem',
-                background: hasRoarClip ? 'rgba(255, 77, 109, 0.25)' : 'rgba(255,255,255,0.04)',
-                color: hasRoarClip ? 'var(--danger)' : 'var(--fg1)',
-                border: hasRoarClip ? '1px solid rgba(255, 77, 109, 0.4)' : '1px dashed rgba(255,255,255,0.15)',
+                background: 'rgba(124, 247, 198, 0.2)',
+                color: 'var(--accent)',
+                border: '1px solid rgba(124, 247, 198, 0.4)',
                 borderRadius: '8px',
-                cursor: !hasRoarClip || transitioning ? 'not-allowed' : 'pointer',
+                cursor: transitioning ? 'not-allowed' : 'pointer',
                 fontWeight: 600,
                 fontSize: '0.875rem',
-                opacity: !hasRoarClip ? 0.5 : 1,
+                opacity: transitioning ? 0.5 : 1,
                 transition: 'background 0.15s ease, color 0.15s ease',
               }}
             >
-              Roar
+              Animate
             </button>
           </motion.div>
         )}
