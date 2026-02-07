@@ -6,13 +6,13 @@ export interface ModelTransform {
 
 export const MODEL_XFORM: Record<'skeleton' | 'skin', ModelTransform> = {
   skeleton: {
-    position: [0, -1.5, 0],
+    position: [0, -3, 0],
     rotation: [0, 0, 0],
-    scale: 1,
+    scale: 1.15,
   },
   skin: {
     position: [0, 0, 0],
     rotation: [0, 0, 0],
-    scale: 6,
+    scale: 5,
   },
 };
