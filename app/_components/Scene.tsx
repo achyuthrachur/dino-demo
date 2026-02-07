@@ -53,7 +53,7 @@ function LoadingFallback() {
 export function Scene() {
   return (
     <Canvas
-      camera={{ position: [0, 2, 8], fov: 45 }}
+      camera={{ position: [6, 2, 6], fov: 45 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       style={{
         position: 'fixed',

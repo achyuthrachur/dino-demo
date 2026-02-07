@@ -19,7 +19,7 @@ export function UIOverlay() {
       }}
       style={{
         position: 'fixed',
-        top: '2rem',
+        bottom: '2rem',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 10,
