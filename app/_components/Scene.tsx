@@ -20,11 +20,11 @@ function TRexModel() {
       const center = box.getCenter(new THREE.Vector3());
       groupRef.current.position.sub(center);
 
-      // Scale if model is too large or too small
+      // Always normalize so the longest axis fits within ~3 units
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 6) {
-        const scale = 5 / maxDim;
+      if (maxDim > 0) {
+        const scale = 3 / maxDim;
         groupRef.current.scale.setScalar(scale);
       }
     }
@@ -57,7 +57,7 @@ function LoadingFallback() {
 export function Scene() {
   return (
     <Canvas
-      camera={{ position: [0, 2, 5], fov: 50 }}
+      camera={{ position: [0, 2, 8], fov: 45 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       style={{
         position: 'fixed',
