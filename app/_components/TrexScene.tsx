@@ -1,16 +1,13 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { animate } from 'animejs';
-import * as THREE from 'three';
-import { CAMERA, DURATION_MS, EASING } from '../_lib/motion';
+import { DURATION_MS, EASING } from '../_lib/motion';
 import { useStore } from '../_lib/store';
 import { TrexSkeleton } from './models/TrexSkeleton';
 import { TrexSkin } from './models/TrexSkin';
 
 export function TrexScene() {
-  const outerGroupRef = useRef<THREE.Group>(null);
   const transitionPhase = useStore((s) => s.transitionPhase);
   const setTransitionPhase = useStore((s) => s.setTransitionPhase);
 
@@ -43,15 +40,8 @@ export function TrexScene() {
     });
   }, [transitionPhase, setTransitionPhase]);
 
-  // Idle revolve (frame-rate independent)
-  useFrame((_state, delta) => {
-    if (outerGroupRef.current) {
-      outerGroupRef.current.rotation.y += CAMERA.idleRevolveRadPerSec * delta;
-    }
-  });
-
   return (
-    <group ref={outerGroupRef}>
+    <group>
       <TrexSkeleton opacity={skeletonOpacity} />
       <TrexSkin opacity={skinOpacity} />
     </group>

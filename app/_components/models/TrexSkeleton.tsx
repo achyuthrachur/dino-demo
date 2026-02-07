@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, Center } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -16,18 +16,17 @@ export function TrexSkeleton({ opacity }: Props) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene } = useGLTF('/models/trex_skeleton.glb');
   const setSceneReady = useStore((s) => s.setSceneReady);
-  const clonedScene = useRef<THREE.Group | null>(null);
+
+  // Clone immediately during render (not in useEffect) so it's available on first paint
+  const clonedScene = useMemo(() => scene.clone() as THREE.Group, [scene]);
 
   useEffect(() => {
-    clonedScene.current = scene.clone() as THREE.Group;
-    ensureTransparent(clonedScene.current);
+    ensureTransparent(clonedScene);
     setSceneReady(true);
-  }, [scene, setSceneReady]);
+  }, [clonedScene, setSceneReady]);
 
   useFrame(() => {
-    if (clonedScene.current) {
-      setSceneOpacity(clonedScene.current, opacity.current);
-    }
+    setSceneOpacity(clonedScene, opacity.current);
   });
 
   const xform = MODEL_XFORM.skeleton;
@@ -40,7 +39,7 @@ export function TrexSkeleton({ opacity }: Props) {
       scale={xform.scale}
     >
       <Center>
-        {clonedScene.current && <primitive object={clonedScene.current} />}
+        <primitive object={clonedScene} />
       </Center>
     </group>
   );
