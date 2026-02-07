@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+
+:root {
+  /* Museum exhibit palette */
+  --bg0: #07090D;
+  --bg1: #0B1020;
+  --fg0: #EAF0FF;
+  --fg1: #A9B4D0;
+  --accent: #7CF7C6;
+  --danger: #FF4D6D;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+  background: var(--bg0);
+  color: var(--fg0);
+  overflow: hidden;
+}
+
+/* Glass panel styling */
+.glass-panel {
+  background: rgba(10, 14, 28, 0.55);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.5rem;
+}
