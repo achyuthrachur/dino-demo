@@ -35,9 +35,7 @@ export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
   // pickClips won't match it by name, so grab the first animation directly.
   const walkClipName = useMemo(() => {
     if (animations.length === 0) return undefined;
-    const names = animations.map((a) => a.name);
-    console.log(`[TrexSkeleton] ${animations.length} clips:`, names);
-    return names[0];
+    return animations[0].name;
   }, [animations]);
 
   useEffect(() => {

@@ -27,7 +27,6 @@ export function TrexSkin({ opacity, onSceneLoaded }: Props) {
 
   const clipMap = useMemo(() => {
     const names = animations.map((a) => a.name);
-    console.log(`[TrexSkin] ${animations.length} clips:`, names);
     return pickClips(names);
   }, [animations]);
 
@@ -112,7 +111,12 @@ export function TrexSkin({ opacity, onSceneLoaded }: Props) {
   const centerOffset = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene);
     const center = box.getCenter(new THREE.Vector3());
-    return [-center.x, -center.y, -center.z] as [number, number, number];
+    const corr = MODEL_XFORM.skin.centerCorrection ?? [0, 0, 0];
+    return [
+      -center.x + corr[0],
+      -center.y + corr[1],
+      -center.z + corr[2],
+    ] as [number, number, number];
   }, [scene]);
 
   // Apply opacity per frame

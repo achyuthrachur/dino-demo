@@ -66,6 +66,7 @@ export function Scene() {
       {/* Controls */}
       <OrbitControls
         makeDefault
+        target={[2, 2, 0]}
         enableDamping
         dampingFactor={0.08}
         rotateSpeed={0.6}

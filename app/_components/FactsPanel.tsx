@@ -6,6 +6,7 @@ import { useStore } from '../_lib/store';
 import { CHAPTERS } from '../_lib/tour';
 import { splitText, extractNumbers } from '../_lib/textSplit';
 import { runEntrance, runExit, type AnimationStyle, type AnimationHandle } from '../_lib/textAnimations';
+import { projectedAnchor } from '../_lib/boneProjection';
 
 /** Cycle through animation styles per chapter */
 const STYLE_CYCLE: AnimationStyle[] = ['fossilDecode', 'museumEtch', 'boneCascade'];
@@ -22,6 +23,66 @@ export function FactsPanel() {
   const animHandle = useRef<AnimationHandle | null>(null);
   const prevChapter = useRef(-1);
   const [renderedChapter, setRenderedChapter] = useState(-1);
+
+  // ── Dynamic position tracking (damped lerp) ──
+  const posRef = useRef({ x: 0, y: 0 });
+  const rafPosId = useRef(0);
+
+  useEffect(() => {
+    if (!visible || !panelRef.current) return;
+
+    const MARGIN = 24;
+    const PANEL_MAX_W = 320;
+    const DAMP = 0.08;
+    const TOP_PAD = 80;
+
+    let initialized = false;
+    let running = true;
+
+    const loop = () => {
+      if (!running || !panelRef.current) return;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const panelH = panelRef.current.offsetHeight;
+
+      let targetX: number;
+      let targetY: number;
+
+      if (projectedAnchor.visible) {
+        if (projectedAnchor.x < vw / 2) {
+          targetX = vw - PANEL_MAX_W - MARGIN;
+        } else {
+          targetX = MARGIN;
+        }
+        targetY = Math.max(TOP_PAD, Math.min(vh - panelH - TOP_PAD, projectedAnchor.y - panelH / 2));
+      } else {
+        targetX = vw - PANEL_MAX_W - MARGIN;
+        targetY = (vh - panelH) / 2;
+      }
+
+      if (!initialized) {
+        posRef.current.x = targetX;
+        posRef.current.y = targetY;
+        initialized = true;
+      } else {
+        posRef.current.x += (targetX - posRef.current.x) * DAMP;
+        posRef.current.y += (targetY - posRef.current.y) * DAMP;
+      }
+
+      panelRef.current.style.left = posRef.current.x + 'px';
+      panelRef.current.style.top = posRef.current.y + 'px';
+
+      rafPosId.current = requestAnimationFrame(loop);
+    };
+
+    rafPosId.current = requestAnimationFrame(loop);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafPosId.current);
+    };
+  }, [visible]);
 
   const style = activeChapter >= 0
     ? STYLE_CYCLE[activeChapter % STYLE_CYCLE.length]
@@ -100,9 +161,8 @@ export function FactsPanel() {
       className="glass-panel"
       style={{
         position: 'fixed',
-        right: '1.5rem',
-        top: '50%',
-        transform: 'translateY(-50%)',
+        left: 0,
+        top: 0,
         zIndex: 15,
         maxWidth: '20rem',
         display: 'flex',
@@ -171,7 +231,7 @@ export function FactsPanel() {
 
       {/* Fact lines */}
       {displayChapter.facts.map((fact, i) => (
-        <FactLine key={`${displayChapter.id}-${i}`} fact={fact} style={style} />
+        <FactLine key={`${displayChapter.id}-${i}`} fact={fact} style={style} index={i} />
       ))}
     </div>
   );
@@ -182,14 +242,16 @@ export function FactsPanel() {
 interface FactLineProps {
   fact: string;
   style: AnimationStyle;
+  index: number;
 }
 
-function FactLine({ fact, style }: FactLineProps) {
+function FactLine({ fact, style, index }: FactLineProps) {
   const numbers = extractNumbers(fact);
 
   return (
     <div
       className="fact-line"
+      data-fact-index={index}
       style={{
         display: 'flex',
         gap: '0.5rem',

@@ -5,15 +5,15 @@ import type { SegmentId } from './director';
  * All child bones inherit the offset from the root.
  */
 export const SEGMENT_BONES: Record<Exclude<SegmentId, 'platform'>, string> = {
-  skull: 'Cabeza_Armature.Rexy',
-  neck: 'Cuello_Armature.Rexy',
-  chest: 'Pecho_Armature.Rexy',
-  arm_l: 'Clavicula.L_Armature.Rexy',
-  arm_r: 'Clavicula.R_Armature.Rexy',
-  pelvis: 'Pelvis_Armature.Rexy',
-  tail: 'Cola.1_Armature.Rexy',
-  leg_l: 'Muslo.L_Armature.Rexy',
-  leg_r: 'Muslo.R_Armature.Rexy',
+  skull: 'Cabeza_ArmatureRexy',
+  neck: 'Cuello_ArmatureRexy',
+  chest: 'Pecho_ArmatureRexy',
+  arm_l: 'ClaviculaL_ArmatureRexy',
+  arm_r: 'ClaviculaR_ArmatureRexy',
+  pelvis: 'Pelvis_ArmatureRexy',
+  tail: 'Cola1_ArmatureRexy',
+  leg_l: 'MusloL_ArmatureRexy',
+  leg_r: 'MusloR_ArmatureRexy',
 };
 
 /**
@@ -32,8 +32,8 @@ export const SEGMENT_DIRECTIONS: Record<Exclude<SegmentId, 'platform'>, [number,
   leg_r: [0.5, -0.7, 0],   // right + down
 };
 
-/** Maximum explode distance in world units */
-export const EXPLODE_MAX_DISTANCE = 5.0;
+/** Maximum explode distance in bone-local units */
+export const EXPLODE_MAX_DISTANCE = 8.0;
 
 /** Per-segment weight presets for chapters */
 export type SegmentWeights = Record<SegmentId, number>;

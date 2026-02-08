@@ -42,6 +42,13 @@ export const DURATION_MS = {
   // ── Skin Reveal ──
   skinRevealDuration: 2800,
   skinEdgeGlow: 200,
+
+  // ── Leader Lines ──
+  leaderDraw: 700,
+  leaderBranchStagger: 120,
+  leaderBranchDraw: 200,
+  leaderDotPulse: 400,
+  leaderExit: 300,
 } as const;
 
 export const EASING = {
@@ -63,7 +70,10 @@ export const EASING = {
   animeCascade: 'out(3)',
 
   // ── Skin Reveal ──
-  animeSkinReveal: 'out(2.5)',
+  animeSkinReveal: 'linear',
+
+  // ── Leader Lines ──
+  animeLeaderDraw: 'out(4)',
 } as const;
 
 export const SPRING_BUTTON = {
@@ -73,7 +83,7 @@ export const SPRING_BUTTON = {
 };
 
 export const SKIN_REVEAL = {
-  fadeDelay: 0.35, // skeleton starts fading at 35% reveal progress
+  fadeDelay: 0.4, // skeleton starts fading at 40% reveal progress
 } as const;
 
 export const CAMERA = {

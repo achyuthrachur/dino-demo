@@ -30,6 +30,8 @@ export function CameraRig() {
   useEffect(() => {
     if (controls) {
       setCameraRefs(camera, controls);
+    } else {
+      console.log('[CameraRig] Waiting for controls...');
     }
   }, [camera, controls, setCameraRefs]);
 

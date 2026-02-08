@@ -40,6 +40,10 @@ interface DirectorState {
     camera: THREE.Camera,
     controls: { target: THREE.Vector3; enabled: boolean; update: () => void },
   ) => void;
+
+  // Skeleton scene ref — set by TrexScene, used by DevPanel for bone inspection
+  _skeletonScene: THREE.Object3D | null;
+  setSkeletonScene: (scene: THREE.Object3D | null) => void;
 }
 
 import * as THREE from 'three';
@@ -64,61 +68,142 @@ export const useDirector = create<DirectorState>((set, get) => ({
   segmentWeights: { ...DEFAULT_WEIGHTS },
   _cameraRef: null,
   _controlsRef: null,
+  _skeletonScene: null,
+
+  setSkeletonScene: (scene) => {
+    set({ _skeletonScene: scene });
+  },
 
   setCameraRefs: (camera, controls) => {
+    console.log('[Director] Camera refs registered', { camera: !!camera, controls: !!controls });
     set({ _cameraRef: camera, _controlsRef: controls });
   },
 
   goToChapter: (i: number) => {
     const { phase, activeChapter, _cameraRef, _controlsRef } = get();
+    console.log('[Director] goToChapter', i, { phase, activeChapter, hasCam: !!_cameraRef, hasCtrl: !!_controlsRef });
     if (phase === 'busy') return;
     if (i === activeChapter) return;
 
     const chapter = CHAPTERS[i];
     if (!chapter) return;
 
+    const comingFromHome = activeChapter === -1;
+
+    // ── ENTRY FROM HOME: 3-phase cinematic intro ──
+    if (comingFromHome) {
+      set({
+        phase: 'busy',
+        activeChapter: i,
+        explodeProgress: 1.0,
+        segmentWeights: { ...DEFAULT_WEIGHTS },
+      });
+
+      // Phase 1: Assemble (1→0) + camera to freeze position
+      const FREEZE_POS: [number, number, number] = [17.0, 4.5, 3.7];
+      const FREEZE_TGT: [number, number, number] = [2.2, 1.8, 0.5];
+      const assembleDuration = 2200;
+
+      const proxy = { progress: 1.0 };
+      const assembleAnim = new Promise<void>((resolve) => {
+        animate(proxy, {
+          progress: 0,
+          duration: assembleDuration,
+          ease: EASING.animeCinematic,
+          onUpdate: () => set({ explodeProgress: proxy.progress }),
+          onComplete: () => resolve(),
+        });
+      });
+
+      const freezeCamAnim =
+        _cameraRef && _controlsRef
+          ? new Promise<void>((resolve) => {
+              const camProxy = {
+                px: _cameraRef.position.x, py: _cameraRef.position.y, pz: _cameraRef.position.z,
+                tx: _controlsRef.target.x, ty: _controlsRef.target.y, tz: _controlsRef.target.z,
+              };
+              _controlsRef.enabled = false;
+              animate(camProxy, {
+                px: FREEZE_POS[0], py: FREEZE_POS[1], pz: FREEZE_POS[2],
+                tx: FREEZE_TGT[0], ty: FREEZE_TGT[1], tz: FREEZE_TGT[2],
+                duration: assembleDuration,
+                ease: EASING.animeCinematic,
+                onUpdate: () => {
+                  _cameraRef.position.set(camProxy.px, camProxy.py, camProxy.pz);
+                  _controlsRef.target.set(camProxy.tx, camProxy.ty, camProxy.tz);
+                  _controlsRef.update();
+                },
+                onComplete: () => resolve(),
+              });
+            })
+          : Promise.resolve();
+
+      Promise.all([assembleAnim, freezeCamAnim])
+        .then(() => {
+          // Phase 2: Hold for 1 second
+          return new Promise<void>((resolve) => setTimeout(resolve, 1000));
+        })
+        .then(() => {
+          // Phase 3: Glide camera to chapter overview position
+          set({ segmentWeights: chapter.weights });
+          if (!_cameraRef || !_controlsRef) {
+            set({ phase: 'touring' });
+            return;
+          }
+          const camProxy = {
+            px: _cameraRef.position.x, py: _cameraRef.position.y, pz: _cameraRef.position.z,
+            tx: _controlsRef.target.x, ty: _controlsRef.target.y, tz: _controlsRef.target.z,
+          };
+          animate(camProxy, {
+            px: chapter.cameraPos[0], py: chapter.cameraPos[1], pz: chapter.cameraPos[2],
+            tx: chapter.cameraTarget[0], ty: chapter.cameraTarget[1], tz: chapter.cameraTarget[2],
+            duration: DURATION_MS.chapterCamera,
+            ease: EASING.animeChapter,
+            onUpdate: () => {
+              _cameraRef.position.set(camProxy.px, camProxy.py, camProxy.pz);
+              _controlsRef.target.set(camProxy.tx, camProxy.ty, camProxy.tz);
+              _controlsRef.update();
+            },
+            onComplete: () => {
+              _controlsRef.enabled = true;
+              console.log('[Director] Entry sequence complete → touring');
+              set({ phase: 'touring' });
+            },
+          });
+        });
+
+      return;
+    }
+
+    // ── NORMAL CHAPTER TRANSITION ──
     set({
       phase: 'busy',
       activeChapter: i,
       segmentWeights: chapter.weights,
     });
 
-    // Animate explode progress to chapter's target
     const proxy = { progress: get().explodeProgress };
     const explodeAnim = new Promise<void>((resolve) => {
       animate(proxy, {
         progress: chapter.explodeAmount,
         duration: DURATION_MS.explodeTransition,
         ease: EASING.animeChapter,
-        onUpdate: () => {
-          set({ explodeProgress: proxy.progress });
-        },
+        onUpdate: () => set({ explodeProgress: proxy.progress }),
         onComplete: () => resolve(),
       });
     });
 
-    // Animate camera if refs are available
     const cameraAnim =
       _cameraRef && _controlsRef
         ? new Promise<void>((resolve) => {
             const camProxy = {
-              px: _cameraRef.position.x,
-              py: _cameraRef.position.y,
-              pz: _cameraRef.position.z,
-              tx: _controlsRef.target.x,
-              ty: _controlsRef.target.y,
-              tz: _controlsRef.target.z,
+              px: _cameraRef.position.x, py: _cameraRef.position.y, pz: _cameraRef.position.z,
+              tx: _controlsRef.target.x, ty: _controlsRef.target.y, tz: _controlsRef.target.z,
             };
-
             _controlsRef.enabled = false;
-
             animate(camProxy, {
-              px: chapter.cameraPos[0],
-              py: chapter.cameraPos[1],
-              pz: chapter.cameraPos[2],
-              tx: chapter.cameraTarget[0],
-              ty: chapter.cameraTarget[1],
-              tz: chapter.cameraTarget[2],
+              px: chapter.cameraPos[0], py: chapter.cameraPos[1], pz: chapter.cameraPos[2],
+              tx: chapter.cameraTarget[0], ty: chapter.cameraTarget[1], tz: chapter.cameraTarget[2],
               duration: DURATION_MS.chapterCamera,
               ease: EASING.animeChapter,
               onUpdate: () => {
@@ -135,6 +220,7 @@ export const useDirector = create<DirectorState>((set, get) => ({
         : Promise.resolve();
 
     Promise.all([explodeAnim, cameraAnim]).then(() => {
+      console.log('[Director] Chapter', i, 'animation complete → touring');
       set({ phase: 'touring' });
     });
   },

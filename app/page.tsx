@@ -5,6 +5,7 @@ import { Scene } from './_components/Scene';
 import { UIOverlay } from './_components/UIOverlay';
 import { ExhibitHUD } from './_components/ExhibitHUD';
 import { FactsPanel } from './_components/FactsPanel';
+import { AnnotationLines } from './_components/AnnotationLines';
 import { ErrorOverlay } from './_components/ErrorOverlay';
 import { useSearchParams } from 'next/navigation';
 
@@ -32,6 +33,7 @@ export default function HomePage() {
       <UIOverlay />
       <ExhibitHUD />
       <FactsPanel />
+      <AnnotationLines />
       <Suspense fallback={null}>
         <DevToolsLoader />
       </Suspense>

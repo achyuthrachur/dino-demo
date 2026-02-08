@@ -5,6 +5,7 @@ import { animate } from 'animejs';
 import * as THREE from 'three';
 import { DURATION_MS, EASING, SKIN_REVEAL } from '../_lib/motion';
 import { useStore } from '../_lib/store';
+import { useDirector } from '../_lib/director';
 import {
   setupSkinClipping,
   removeSkinClipping,
@@ -16,6 +17,7 @@ import {
 import { TrexSkeleton } from './models/TrexSkeleton';
 import { TrexSkin } from './models/TrexSkin';
 import { ExplodeController } from './ExplodeController';
+import { BoneProjector } from './BoneProjector';
 
 export function TrexScene() {
   const transitionPhase = useStore((s) => s.transitionPhase);
@@ -28,6 +30,7 @@ export function TrexScene() {
 
   const handleSkeletonLoaded = useCallback((scene: THREE.Object3D) => {
     setSkeletonScene(scene);
+    useDirector.getState().setSkeletonScene(scene);
   }, []);
 
   const handleSkinLoaded = useCallback((scene: THREE.Object3D) => {
@@ -131,6 +134,7 @@ export function TrexScene() {
       <TrexSkeleton opacity={skeletonOpacity} onSceneLoaded={handleSkeletonLoaded} />
       <TrexSkin opacity={skinOpacity} onSceneLoaded={handleSkinLoaded} />
       <ExplodeController skeletonScene={skeletonScene} />
+      <BoneProjector skeletonScene={skeletonScene} />
     </group>
   );
 }

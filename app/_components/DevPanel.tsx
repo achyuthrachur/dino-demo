@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useDirector } from '../_lib/director';
 import { CHAPTERS } from '../_lib/tour';
+import { SEGMENT_BONES } from '../_lib/explodePresets';
 
 export function DevPanel() {
   const phase = useDirector((s) => s.phase);
@@ -39,30 +40,40 @@ export function DevPanel() {
   }, [_cameraRef, _controlsRef]);
 
   const logBones = useCallback(() => {
-    // Find skeleton scene via the director's internal state
-    const scene = document.querySelector('canvas');
-    if (!scene) return;
+    const { _skeletonScene: root } = useDirector.getState();
 
-    // Access from Three.js internals via the store
-    // We can traverse the scene to find all bones
-    const { _cameraRef } = useDirector.getState();
-    if (!_cameraRef) return;
+    if (!root) {
+      console.warn('[DevPanel] Skeleton scene not loaded yet');
+      return;
+    }
 
-    // Walk the Three.js scene from the camera's parent
-    let root = _cameraRef.parent;
-    while (root?.parent) root = root.parent;
+    // Strategy 1: type/isBone check
+    const boneTyped: string[] = [];
+    // Strategy 2: name-based — match against SEGMENT_BONES values
+    const targetNames = new Set(Object.values(SEGMENT_BONES));
+    const nameMatched: string[] = [];
+    // Diagnostic: all named nodes
+    const allNamed: string[] = [];
 
-    if (!root) return;
-
-    const names: string[] = [];
-    root.traverse((child: { type?: string; name?: string }) => {
-      if (child.type === 'Bone' && child.name) {
-        names.push(child.name);
+    root.traverse((child: { type?: string; name?: string; isBone?: boolean }) => {
+      if (child.name) {
+        allNamed.push(`${child.name} [type=${child.type}, isBone=${!!child.isBone}]`);
+      }
+      if ((child.type === 'Bone' || child.isBone) && child.name) {
+        boneTyped.push(child.name);
+      }
+      if (child.name && targetNames.has(child.name)) {
+        nameMatched.push(child.name);
       }
     });
 
-    setBoneNames(names);
-    console.log(`[DevPanel] All bones (${names.length}):`, names);
+    console.log(`[DevPanel] Bone-typed nodes (${boneTyped.length}):`, boneTyped);
+    console.log(`[DevPanel] Name-matched segment bones (${nameMatched.length}/${targetNames.size}):`, nameMatched);
+    console.log(`[DevPanel] All named nodes (${allNamed.length}):`, allNamed);
+
+    // Use bone-typed if found, otherwise fall back to name-matched, otherwise show all
+    const result = boneTyped.length > 0 ? boneTyped : nameMatched.length > 0 ? nameMatched : allNamed;
+    setBoneNames(result);
   }, []);
 
   return (
