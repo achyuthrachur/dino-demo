@@ -34,8 +34,8 @@ export const CHAPTERS: ChapterDef[] = [
   {
     id: 'skull',
     title: 'Skull & Jaws',
-    cameraPos: [6, 5, 8],
-    cameraTarget: [3, 4, 2],
+    cameraPos: [4, 5, 5],
+    cameraTarget: [2.5, 3.5, 1],
     explodeAmount: 0.8,
     weights: chapterWeights({ skull: 1, neck: 0.6 }),
     facts: [
@@ -48,7 +48,7 @@ export const CHAPTERS: ChapterDef[] = [
   {
     id: 'arms',
     title: 'Arms & Claws',
-    cameraPos: [8, 3, 10],
+    cameraPos: [-2, 3, 8],
     cameraTarget: [2, 2.5, 0],
     explodeAmount: 0.7,
     weights: chapterWeights({ arm_l: 1, arm_r: 1, chest: 0.5 }),
@@ -62,8 +62,8 @@ export const CHAPTERS: ChapterDef[] = [
   {
     id: 'legs_tail',
     title: 'Legs & Tail',
-    cameraPos: [14, 3, 14],
-    cameraTarget: [1, 1, -1],
+    cameraPos: [-4, 3, -12],
+    cameraTarget: [1, 1, -2],
     explodeAmount: 0.7,
     weights: chapterWeights({ leg_l: 1, leg_r: 1, tail: 1, pelvis: 0.6 }),
     facts: [

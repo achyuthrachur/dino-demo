@@ -11,9 +11,10 @@ import { useStore } from '../../_lib/store';
 
 interface Props {
   opacity: React.MutableRefObject<number>;
+  onSceneLoaded?: (scene: THREE.Object3D) => void;
 }
 
-export function TrexSkin({ opacity }: Props) {
+export function TrexSkin({ opacity, onSceneLoaded }: Props) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF('/models/trex_skin.glb');
   const { actions, mixer } = useAnimations(animations, groupRef);
@@ -40,7 +41,8 @@ export function TrexSkin({ opacity }: Props) {
     ensureTransparent(scene);
     setHasRoarClip(!!clipMap.roar);
     setSkinReady(true);
-  }, [scene, clipMap, setHasRoarClip, setSkinReady]);
+    onSceneLoaded?.(scene);
+  }, [scene, clipMap, setHasRoarClip, setSkinReady, onSceneLoaded]);
 
   // Stop all actions helper
   const stopAll = () => {

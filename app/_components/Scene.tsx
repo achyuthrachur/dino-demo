@@ -31,7 +31,7 @@ export function Scene() {
   return (
     <Canvas
       camera={{ position: [12, 4, 18], fov: 45 }}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      gl={{ antialias: true, powerPreference: 'high-performance', localClippingEnabled: true }}
       style={{
         position: 'fixed',
         top: 0,

@@ -32,7 +32,19 @@ export function initExplodeState(scene: THREE.Object3D): ExplodeState {
   // Collect all bones by name for lookup
   const boneMap = new Map<string, THREE.Bone>();
   scene.traverse((child) => {
-    if ((child as THREE.Bone).isBone) {
+    // Strategy 1: Extract bones from SkinnedMesh skeleton (most robust)
+    if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+      const skinned = child as THREE.SkinnedMesh;
+      if (skinned.skeleton?.bones) {
+        for (const bone of skinned.skeleton.bones) {
+          if (bone.name && !boneMap.has(bone.name)) {
+            boneMap.set(bone.name, bone);
+          }
+        }
+      }
+    }
+    // Strategy 2: Direct type check (aligns with DevPanel)
+    if (child.type === 'Bone' && child.name && !boneMap.has(child.name)) {
       boneMap.set(child.name, child as THREE.Bone);
     }
     if (child.name === 'platform_0' && child instanceof THREE.Mesh) {

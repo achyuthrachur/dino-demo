@@ -24,7 +24,6 @@ export function ExplodeController({ skeletonScene }: Props) {
     explodeState.current = initExplodeState(skeletonScene);
 
     return () => {
-      // Reset bones on unmount
       if (explodeState.current) {
         resetExplode(explodeState.current);
         explodeState.current = null;
@@ -33,7 +32,6 @@ export function ExplodeController({ skeletonScene }: Props) {
   }, [skeletonScene]);
 
   // Apply explode offsets every frame based on director state
-  // Priority 100 ensures this runs AFTER the animation mixer (priority 0)
   useFrame(() => {
     if (!explodeState.current?.ready) return;
 
@@ -45,7 +43,7 @@ export function ExplodeController({ skeletonScene }: Props) {
     }
 
     applyExplode(explodeState.current, explodeProgress, segmentWeights);
-  }, 100);
+  });
 
   return null;
 }

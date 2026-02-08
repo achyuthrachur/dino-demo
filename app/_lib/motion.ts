@@ -17,6 +17,31 @@ export const DURATION_MS = {
   hudStagger: 60,
   factExit: 250,
   bulletPop: 200,
+
+  // ── Text Animation: Fossil Decode ──
+  titleScatter: 600,
+  titleCharStagger: 30,
+  factDecodeChar: 40,
+  factDecodeIterations: 3,
+
+  // ── Text Animation: Museum Etch ──
+  etchCursorSpeed: 500,
+  etchCharStagger: 20,
+
+  // ── Text Animation: Bone Cascade ──
+  cascadeDrop: 500,
+
+  // ── Text Animation: Shared ──
+  underlineTrace: 500,
+  factLineStagger: 150,
+  factCharStagger: 20,
+  counterRoll: 1000,
+  bulletPulse: 400,
+  exitDuration: 300,
+
+  // ── Skin Reveal ──
+  skinRevealDuration: 1800,
+  skinEdgeGlow: 200,
 } as const;
 
 export const EASING = {
@@ -31,6 +56,14 @@ export const EASING = {
   animeSoft: 'out(2)',
   animeCinematic: 'out(5)',
   animeChapter: 'out(3)',
+
+  // ── Text Animation ──
+  animeDecode: 'out(2)',
+  animeEtch: 'linear',
+  animeCascade: 'out(3)',
+
+  // ── Skin Reveal ──
+  animeSkinReveal: 'out(4)',
 } as const;
 
 export const SPRING_BUTTON = {
@@ -38,6 +71,10 @@ export const SPRING_BUTTON = {
   stiffness: 400,
   damping: 17,
 };
+
+export const SKIN_REVEAL = {
+  fadeDelay: 0.3, // skeleton starts fading at 30% reveal progress
+} as const;
 
 export const CAMERA = {
   idleRevolveRadPerSec: 0.25,

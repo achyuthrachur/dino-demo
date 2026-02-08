@@ -16,7 +16,7 @@ interface Props {
 
 export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
   const groupRef = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF('/models/trex_skeleton.glb');
+  const { scene, animations } = useGLTF('/models/tyrannosaurus-rex/skeleton-rigged.glb');
   const { actions, mixer } = useAnimations(animations, groupRef);
   const setSceneReady = useStore((s) => s.setSceneReady);
   const setHasWalkClip = useStore((s) => s.setHasWalkClip);
