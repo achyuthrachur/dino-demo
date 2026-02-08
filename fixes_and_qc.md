@@ -123,4 +123,23 @@ Target URL: localhost:3000 (ensure server is running)
 - **Pass/Fail** for each step.
 - **Console Logs**: Paste any critical errors.
 - **Visuals**: Describe any glitches (e.g., "Model flashed white", "Text overlapped").
+
+---
+
+## 4. Model Replacement Guide (T-Rex)
+
+**Goal**: Update the T-Rex skeleton with the new rigged asset.
+**Source**: `C:\Users\rachura\Downloads\t-rex-skeleton-rigged-and-animated.glb`
+**Target**: `[Project Root]\public\models\tyrannosaurus-rex\skeleton.glb`
+
+### Instructions:
+1.  **Backup** the existing file:
+    *   Rename `public\models\tyrannosaurus-rex\skeleton.glb` to `skeleton_OLD.glb`.
+2.  **Copy** the new file from Downloads.
+3.  **Paste** it into `public\models\tyrannosaurus-rex\`.
+4.  **Rename** the new file to `skeleton.glb`.
+5.  **Verify**:
+    *   Reload the application.
+    *   Navigate to the T-Rex tab.
+    *   If the model has animations, verify they play (this might require code updates if animation names changed).
 ```

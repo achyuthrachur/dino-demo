@@ -6,16 +6,30 @@
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Environment Variables](#environment-variables)
-3. [Pre-Deployment Checklist](#pre-deployment-checklist)
-4. [GitHub Repository Setup](#github-repository-setup)
-5. [Vercel Deployment](#vercel-deployment)
-6. [Post-Deployment Configuration](#post-deployment-configuration)
-7. [CDN & Asset Optimization](#cdn--asset-optimization)
-8. [Monitoring & Analytics](#monitoring--analytics)
-9. [Troubleshooting](#troubleshooting)
-10. [Performance Optimization](#performance-optimization)
+1. [Repo Overview](#repo-overview)
+2. [Prerequisites](#prerequisites)
+3. [Environment Variables](#environment-variables)
+4. [Pre-Deployment Checklist](#pre-deployment-checklist)
+5. [GitHub Repository Setup](#github-repository-setup)
+6. [Vercel Deployment](#vercel-deployment)
+7. [Post-Deployment Configuration](#post-deployment-configuration)
+8. [CDN & Asset Optimization](#cdn--asset-optimization)
+9. [Monitoring & Analytics](#monitoring--analytics)
+10. [Troubleshooting](#troubleshooting)
+11. [Performance Optimization](#performance-optimization)
+
+---
+
+## Repo Overview
+
+This repo contains two deployables:
+
+1. **Next.js app (the museum exhibit)**: source in `src/` with assets in `public/`.
+2. **Standalone static HTML**: `crowe-brand-demo.html` (a single-file visual reference).
+   - Deploy this like any static file (no Node.js required).
+   - If you want it accessible from the deployed Next.js site, place it under `public/` (e.g. `public/crowe-brand-demo.html`) so it's served at `/crowe-brand-demo.html`.
+
+If you only need the museum exhibit, you can ignore `crowe-brand-demo.html`.
 
 ---
 
@@ -31,8 +45,8 @@
 ### Required Tools
 
 ```bash
-# Node.js 18.17 or later (20.x recommended)
-node --version  # Should be >= 18.17.0
+# Node.js 20.9 or later (required by Next.js 16.x)
+node --version  # Should be >= 20.9.0
 
 # npm (comes with Node.js)
 npm --version
@@ -208,13 +222,13 @@ git add .
 git commit -m "feat: complete Infinite Mesozoic digital museum"
 
 # Create GitHub repository (using GitHub CLI)
-gh repo create achyuthrachur/dino-museum --public --source=. --remote=origin --push
+gh repo create <YOUR_GITHUB_ORG_OR_USER>/dino-museum --public --source=. --remote=origin --push
 
 # Or manually:
 # 1. Go to github.com/new
 # 2. Create repository named "dino-museum"
 # 3. Run:
-git remote add origin https://github.com/achyuthrachur/dino-museum.git
+git remote add origin https://github.com/<YOUR_GITHUB_ORG_OR_USER>/dino-museum.git
 git branch -M main
 git push -u origin main
 ```
@@ -230,7 +244,7 @@ git push -u origin main
 2. **Click "Add New" → "Project"**
 
 3. **Import your repository**
-   - Find `achyuthrachur/dino-museum`
+   - Find your repo (e.g. `<YOUR_GITHUB_ORG_OR_USER>/dino-museum`)
    - Click "Import"
 
 4. **Configure Project Settings**
@@ -293,7 +307,7 @@ In Vercel Dashboard:
 
 ### 2. vercel.json Configuration
 
-Create `vercel.json` in project root for advanced settings:
+This repo already includes `vercel.json` (recommended defaults for security headers + long-term caching for `.glb` assets). Adjust as needed:
 
 ```json
 {
@@ -476,6 +490,14 @@ NEXT_PUBLIC_SENTRY_DSN=your_dsn
 ```bash
 # Clear cache and reinstall
 rm -rf node_modules .next
+npm install
+npm run build
+```
+
+Windows PowerShell equivalent:
+
+```powershell
+Remove-Item -Recurse -Force node_modules, .next
 npm install
 npm run build
 ```

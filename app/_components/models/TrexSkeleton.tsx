@@ -7,12 +7,14 @@ import * as THREE from 'three';
 import { MODEL_XFORM } from '../../_lib/models';
 import { ensureTransparent, setSceneOpacity } from '../../_lib/three/materials';
 import { useStore } from '../../_lib/store';
+import { useDirector } from '../../_lib/director';
 
 interface Props {
   opacity: React.MutableRefObject<number>;
+  onSceneLoaded?: (scene: THREE.Object3D) => void;
 }
 
-export function TrexSkeleton({ opacity }: Props) {
+export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF('/models/trex_skeleton.glb');
   const { actions, mixer } = useAnimations(animations, groupRef);
@@ -21,6 +23,7 @@ export function TrexSkeleton({ opacity }: Props) {
   const walkRequested = useStore((s) => s.walkRequested);
   const clearWalkRequest = useStore((s) => s.clearWalkRequest);
   const mode = useStore((s) => s.mode);
+  const directorPhase = useDirector((s) => s.phase);
 
   const centerOffset = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene);
@@ -45,7 +48,19 @@ export function TrexSkeleton({ opacity }: Props) {
     ensureTransparent(scene);
     setHasWalkClip(!!walkClipName);
     setSceneReady(true);
-  }, [scene, walkClipName, setHasWalkClip, setSceneReady]);
+    onSceneLoaded?.(scene);
+  }, [scene, walkClipName, setHasWalkClip, setSceneReady, onSceneLoaded]);
+
+  // Freeze mixer when touring — prevents walk animation bindings
+  // from overwriting bone positions set by ExplodeController
+  useEffect(() => {
+    if (directorPhase !== 'home') {
+      mixer.stopAllAction();
+      mixer.timeScale = 0;
+    } else {
+      mixer.timeScale = 1;
+    }
+  }, [directorPhase, mixer]);
 
   // Walk one-shot — only on explicit button press in skeleton mode
   useEffect(() => {
@@ -54,6 +69,9 @@ export function TrexSkeleton({ opacity }: Props) {
     clearWalkRequest();
 
     if (!walkClipName || !actions[walkClipName] || mode !== 'skeleton') return;
+
+    // Block walk when touring — bones are being manipulated by explode
+    if (directorPhase !== 'home') return;
 
     const walkAction = actions[walkClipName]!;
 

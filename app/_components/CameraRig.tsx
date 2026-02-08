@@ -3,12 +3,21 @@
 import { useRef, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import { animate } from 'animejs';
+import * as THREE from 'three';
 import { CAMERA, DURATION_MS, EASING } from '../_lib/motion';
 import { useStore } from '../_lib/store';
+import { useDirector } from '../_lib/director';
 
 export function CameraRig() {
   const { camera } = useThree();
+  const controls = useThree((s) => s.controls) as unknown as {
+    target: THREE.Vector3;
+    enabled: boolean;
+    update: () => void;
+  } | null;
+
   const transitionPhase = useStore((s) => s.transitionPhase);
+  const setCameraRefs = useDirector((s) => s.setCameraRefs);
   const basePos = useRef<{ z: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -17,7 +26,14 @@ export function CameraRig() {
     }
   }, [camera]);
 
-  // Animate camera position directly on transition — no per-frame fighting with OrbitControls
+  // Register camera + controls with director so it can drive chapter animations
+  useEffect(() => {
+    if (controls) {
+      setCameraRefs(camera, controls);
+    }
+  }, [camera, controls, setCameraRefs]);
+
+  // Mode-switch dolly (existing behavior — only fires on transitionPhase changes)
   useEffect(() => {
     if (transitionPhase === 'idle' || !basePos.current) return;
 
