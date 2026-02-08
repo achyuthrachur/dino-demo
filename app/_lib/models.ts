@@ -11,8 +11,8 @@ export const MODEL_XFORM: Record<'skeleton' | 'skin', ModelTransform> = {
     scale: 1.15,
   },
   skin: {
-    position: [2, 1.5, 0],
+    position: [2, 1, 0],
     rotation: [0, 0, 0],
-    scale: 5,
+    scale: 5.74,
   },
 };

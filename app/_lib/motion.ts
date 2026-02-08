@@ -5,7 +5,7 @@ export const DURATION_MS = {
   crossfade: 520,
   cameraDolly: 720,
   roarOneShot: 1400,
-  transitionGuard: 950,
+  transitionGuard: 2800,
   // Stage 2 — Exhibit
   chapterCamera: 1200,
   explodeTransition: 800,
@@ -40,7 +40,7 @@ export const DURATION_MS = {
   exitDuration: 300,
 
   // ── Skin Reveal ──
-  skinRevealDuration: 1800,
+  skinRevealDuration: 2800,
   skinEdgeGlow: 200,
 } as const;
 
@@ -63,7 +63,7 @@ export const EASING = {
   animeCascade: 'out(3)',
 
   // ── Skin Reveal ──
-  animeSkinReveal: 'out(4)',
+  animeSkinReveal: 'out(2.5)',
 } as const;
 
 export const SPRING_BUTTON = {
@@ -73,7 +73,7 @@ export const SPRING_BUTTON = {
 };
 
 export const SKIN_REVEAL = {
-  fadeDelay: 0.3, // skeleton starts fading at 30% reveal progress
+  fadeDelay: 0.35, // skeleton starts fading at 35% reveal progress
 } as const;
 
 export const CAMERA = {
