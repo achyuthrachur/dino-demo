@@ -12,6 +12,7 @@ import { VoicePTTButton } from './_components/VoicePTTButton';
 import { GestureStatusPill } from './_components/GestureStatusPill';
 import { ToastOverlay } from './_components/ToastOverlay';
 import { CameraPreview } from './_components/CameraPreview';
+import { HeroTitle } from './_components/HeroTitle';
 import { useSearchParams } from 'next/navigation';
 
 function DevToolsLoader() {
@@ -37,6 +38,7 @@ export default function HomePage() {
   return (
     <ErrorOverlay>
       <Scene />
+      <HeroTitle />
       <UIOverlay />
       <ExhibitHUD />
       <FactsPanel />

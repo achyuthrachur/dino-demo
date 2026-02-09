@@ -7,7 +7,7 @@ export function isVoiceSupported(): boolean {
 }
 
 export const SYNONYM_MAP: Record<VoiceCommand, string[]> = {
-  explore: ['explore', 'tour', 'exhibit', 'show me', 'start tour'],
-  skin: ['skin', 'flesh', 'muscle', 'body', 'alive', 'cover'],
-  roar: ['roar', 'scream', 'growl', 'raw', 'rawr', 'attack', 'shout'],
+  explore: ["let's go", 'lets go', 'explore', 'tour'],
+  skin: ['outfit', 'skin', 'skeleton'],
+  roar: ['speak', 'roar'],
 };

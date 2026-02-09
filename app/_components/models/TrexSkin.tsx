@@ -24,6 +24,13 @@ export function TrexSkin({ opacity, onSceneLoaded }: Props) {
   const clearRoarRequest = useStore((s) => s.clearRoarRequest);
   const mode = useStore((s) => s.mode);
   const isPlayingRoar = useRef(false);
+  const roarAudio = useRef<HTMLAudioElement | null>(null);
+
+  // Lazily create audio element (client-only)
+  useEffect(() => {
+    roarAudio.current = new Audio('/audio/trex-roar.m4a');
+    roarAudio.current.volume = 0.6;
+  }, []);
 
   const clipMap = useMemo(() => {
     const names = animations.map((a) => a.name);
@@ -82,6 +89,12 @@ export function TrexSkin({ opacity, onSceneLoaded }: Props) {
     const idleAction = clipMap.idle ? actions[clipMap.idle] : null;
 
     isPlayingRoar.current = true;
+
+    // Play roar sound effect
+    if (roarAudio.current) {
+      roarAudio.current.currentTime = 0;
+      roarAudio.current.play().catch(() => {});
+    }
 
     if (idleAction) idleAction.fadeOut(0.3);
 

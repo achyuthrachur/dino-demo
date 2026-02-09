@@ -13,8 +13,6 @@ export function ExhibitHUD() {
   const activeChapter = useDirector((s) => s.activeChapter);
   const goToChapter = useDirector((s) => s.goToChapter);
   const goHome = useDirector((s) => s.goHome);
-  const toggleExplode = useDirector((s) => s.toggleExplode);
-
   // Only visible in skeleton mode when touring
   const visible = mode === 'skeleton' && activeChapter >= 0;
   const busy = phase === 'busy';
@@ -22,7 +20,7 @@ export function ExhibitHUD() {
   // Keyboard shortcuts — active when touring
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const { phase, activeChapter, goToChapter, goHome, toggleExplode } =
+      const { phase, activeChapter, goToChapter, goHome } =
         useDirector.getState();
 
       if (phase === 'busy') return;
@@ -36,10 +34,6 @@ export function ExhibitHUD() {
         case 'ArrowLeft':
           e.preventDefault();
           if (activeChapter > 0) goToChapter(activeChapter - 1);
-          break;
-        case ' ':
-          e.preventDefault();
-          toggleExplode();
           break;
         case 'Escape':
           e.preventDefault();
@@ -171,29 +165,6 @@ export function ExhibitHUD() {
               &#8594;
             </motion.button>
           </div>
-
-          {/* Explode toggle */}
-          <motion.button
-            onClick={() => !busy && toggleExplode()}
-            disabled={busy}
-            title="Toggle explode view (Space)"
-            whileHover={!busy ? { scale: 1.05, background: 'rgba(124, 247, 198, 0.25)' } : undefined}
-            whileTap={!busy ? { scale: 0.95 } : undefined}
-            transition={SPRING_BUTTON}
-            style={{
-              padding: '0.35rem 0.75rem',
-              background: 'rgba(124, 247, 198, 0.15)',
-              color: 'var(--accent)',
-              border: '1px solid rgba(124, 247, 198, 0.3)',
-              borderRadius: '6px',
-              cursor: busy ? 'wait' : 'pointer',
-              fontWeight: 600,
-              fontSize: '0.75rem',
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            Explode
-          </motion.button>
 
           {/* Exit tour */}
           <motion.button

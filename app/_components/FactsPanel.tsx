@@ -173,7 +173,7 @@ export function FactsPanel() {
         left: 0,
         top: 0,
         zIndex: 15,
-        maxWidth: '32.5rem',
+        maxWidth: 'min(32.5rem, calc(100vw - 2rem))',
         width: 'max-content',
         display: 'flex',
         flexDirection: 'column',
@@ -308,7 +308,6 @@ function FactLine({ fact, style, index }: FactLineProps) {
           color: 'var(--fg1)',
           lineHeight: 1.5,
           position: 'relative',
-          whiteSpace: 'nowrap',
         }}
       >
         {style === 'museumEtch' && (

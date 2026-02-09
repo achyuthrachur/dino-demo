@@ -14,9 +14,9 @@ const GESTURE_GUIDE = [
 ] as const;
 
 const VOICE_GUIDE = [
-  { command: '"Roar"', action: 'Play roar (skin mode)' },
-  { command: '"Skin"', action: 'Toggle skin/skeleton' },
-  { command: '"Explore"', action: 'Start exhibit tour' },
+  { command: '"Speak"', action: 'Play roar (skin mode)' },
+  { command: '"Outfit"', action: 'Toggle skin/skeleton' },
+  { command: '"Let\'s go"', action: 'Start exhibit tour' },
 ] as const;
 
 function HandIcon() {
