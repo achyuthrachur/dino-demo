@@ -32,9 +32,10 @@ export function FactsPanel() {
     if (!visible || !panelRef.current) return;
 
     const MARGIN = 24;
-    const PANEL_MAX_W = 320;
-    const DAMP = 0.08;
+    const PANEL_MAX_W = 520;
+    const DAMP = 0.12;
     const TOP_PAD = 80;
+    const DEFAULT_GAP = 100;
 
     let initialized = false;
     let running = true;
@@ -50,11 +51,19 @@ export function FactsPanel() {
       let targetY: number;
 
       if (projectedAnchor.visible) {
+        // Per-chapter gap override or default
+        const chIdx = useDirector.getState().activeChapter;
+        const GAP = (chIdx >= 0 && CHAPTERS[chIdx]?.panelGap) || DEFAULT_GAP;
+
+        // Place panel just past the bone, on the side with more free space
         if (projectedAnchor.x < vw / 2) {
-          targetX = vw - PANEL_MAX_W - MARGIN;
+          // Bone in left half → panel just to the right of bone
+          targetX = Math.min(projectedAnchor.x + GAP, vw - PANEL_MAX_W - MARGIN);
         } else {
-          targetX = MARGIN;
+          // Bone in right half → panel just to the left of bone
+          targetX = Math.max(MARGIN, projectedAnchor.x - GAP - PANEL_MAX_W);
         }
+        // Vertically center on bone Y, clamped to viewport
         targetY = Math.max(TOP_PAD, Math.min(vh - panelH - TOP_PAD, projectedAnchor.y - panelH / 2));
       } else {
         targetX = vw - PANEL_MAX_W - MARGIN;
@@ -158,13 +167,14 @@ export function FactsPanel() {
   return (
     <div
       ref={panelRef}
-      className="glass-panel"
+      className="glass-panel facts-panel"
       style={{
         position: 'fixed',
         left: 0,
         top: 0,
         zIndex: 15,
-        maxWidth: '20rem',
+        maxWidth: '32.5rem',
+        width: 'max-content',
         display: 'flex',
         flexDirection: 'column',
         gap: '0.75rem',
@@ -298,6 +308,7 @@ function FactLine({ fact, style, index }: FactLineProps) {
           color: 'var(--fg1)',
           lineHeight: 1.5,
           position: 'relative',
+          whiteSpace: 'nowrap',
         }}
       >
         {style === 'museumEtch' && (

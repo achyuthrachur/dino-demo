@@ -249,6 +249,15 @@ export function boneCascade(root: HTMLElement): AnimationHandle {
       ease: EASING.animeCascade,
     });
 
+    // Title characters fade in with stagger
+    animate('.title-char', {
+      opacity: [0, 1],
+      translateY: [-15, 0],
+      delay: stagger(30, { start: 100 }),
+      duration: 250,
+      ease: EASING.animeCascade,
+    });
+
     // Underline expands from center
     animate('.underline-bar', {
       scaleX: [0, 1],

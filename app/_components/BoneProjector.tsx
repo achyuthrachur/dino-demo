@@ -25,11 +25,27 @@ export function BoneProjector({ skeletonScene }: Props) {
   useEffect(() => {
     const map = new Map<string, THREE.Bone>();
     if (skeletonScene) {
+      // Strategy 1: SkinnedMesh skeleton bones (most reliable)
       skeletonScene.traverse((obj) => {
-        if ((obj as THREE.Bone).isBone) {
-          map.set(obj.name, obj as THREE.Bone);
+        if ((obj as THREE.SkinnedMesh).isSkinnedMesh) {
+          const skinned = obj as THREE.SkinnedMesh;
+          if (skinned.skeleton?.bones) {
+            for (const bone of skinned.skeleton.bones) {
+              if (bone.name && !map.has(bone.name)) {
+                map.set(bone.name, bone);
+              }
+            }
+          }
         }
       });
+      // Strategy 2: Direct isBone traverse
+      if (map.size === 0) {
+        skeletonScene.traverse((obj) => {
+          if ((obj as THREE.Bone).isBone && obj.name && !map.has(obj.name)) {
+            map.set(obj.name, obj as THREE.Bone);
+          }
+        });
+      }
     }
     boneMapRef.current = map;
 

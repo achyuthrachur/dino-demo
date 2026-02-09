@@ -13,7 +13,7 @@ const BRANCH_WIDTH = 1;
 const TRUNK_OPACITY = 0.7;
 const BRANCH_OPACITY = 0.5;
 const DOT_RADIUS = 4;
-const JUNCTION_GAP = 20; // px gap between panel left edge and spine
+const JUNCTION_GAP = 4; // px gap between panel left edge and spine
 
 /**
  * Fullscreen SVG overlay that draws animated leader lines from a projected
@@ -52,7 +52,7 @@ export function AnnotationLines() {
     const by = projectedAnchor.y;
 
     // Find fact panel bullet dots
-    const bullets = document.querySelectorAll('.fact-line .bullet-dot');
+    const bullets = document.querySelectorAll('.facts-panel .fact-line .bullet-dot');
     if (bullets.length === 0) return;
 
     // Get bullet positions
@@ -67,11 +67,15 @@ export function AnnotationLines() {
 
     if (bulletPositions.length === 0) return;
 
-    // Find panel left edge for junction point
-    const panel = document.querySelector('.glass-panel') as HTMLElement;
+    // Find panel edge for junction point — connect on the side facing the bone
+    const panel = document.querySelector('.facts-panel') as HTMLElement;
     if (!panel) return;
     const panelRect = panel.getBoundingClientRect();
-    const junctionX = panelRect.left - JUNCTION_GAP;
+    const panelCenterX = panelRect.left + panelRect.width / 2;
+    const boneOnLeft = bx < panelCenterX;
+    const junctionX = boneOnLeft
+      ? panelRect.left - JUNCTION_GAP   // spine on left edge
+      : panelRect.right + JUNCTION_GAP; // spine on right edge
 
     // Spine Y range: first bullet Y to last bullet Y
     const firstY = bulletPositions[0].cy;
@@ -80,16 +84,18 @@ export function AnnotationLines() {
     // Update trunk path: bone → junction at bone's Y level → vertical spine
     const trunk = svg.querySelector('.leader-trunk') as SVGPathElement;
     if (trunk) {
-      // Trunk: horizontal from bone to junction X, then vertical to span all bullets
       const d = `M ${bx} ${by} L ${junctionX} ${by} L ${junctionX} ${firstY} L ${junctionX} ${lastY}`;
       trunk.setAttribute('d', d);
     }
 
-    // Update branch paths: horizontal from spine to each bullet
+    // Branch target X: the panel edge (where lines visually attach)
+    const branchTargetX = boneOnLeft ? panelRect.left : panelRect.right;
+
+    // Update branch paths: short horizontal tick from spine to panel edge
     bulletPositions.forEach((bp, i) => {
       const branch = svg.querySelector(`.leader-branch-${i}`) as SVGPathElement;
       if (branch) {
-        const d = `M ${junctionX} ${bp.cy} L ${bp.cx} ${bp.cy}`;
+        const d = `M ${junctionX} ${bp.cy} L ${branchTargetX} ${bp.cy}`;
         branch.setAttribute('d', d);
       }
     });
@@ -158,7 +164,7 @@ export function AnnotationLines() {
     svg.innerHTML = '';
 
     // Count bullets currently in DOM
-    const bullets = document.querySelectorAll('.fact-line .bullet-dot');
+    const bullets = document.querySelectorAll('.facts-panel .fact-line .bullet-dot');
     const count = bullets.length;
     if (count === 0) return;
 

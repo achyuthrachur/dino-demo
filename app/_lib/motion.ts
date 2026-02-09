@@ -49,6 +49,12 @@ export const DURATION_MS = {
   leaderBranchDraw: 200,
   leaderDotPulse: 400,
   leaderExit: 300,
+
+  // ── Stage 3: Input ──
+  inputToast: 1200,
+  voiceCooldown: 900,
+  gestureAcquire: 250,
+  gestureRelease: 420,
 } as const;
 
 export const EASING = {
@@ -95,4 +101,20 @@ export const CAMERA = {
 
 export const STAGE_LOCKS = {
   modeSwitchLockMs: 900,
+} as const;
+
+export const INPUT = {
+  minHandConfidence: 0.55,
+  stableFramesRequired: 4,
+  smoothingAlphaRotate: 0.30,
+  smoothingAlphaPan: 0.40,
+  smoothingAlphaZoom: 0.45,
+  rotateYawScale: 3.0,
+  rotatePitchScale: 2.2,
+  panXScale: 3.5,
+  panYScale: 3.0,
+  zoomScale: 7.0,
+  pinchThreshold: 0.08,
+  minDistance: 2,
+  maxDistance: 60,
 } as const;

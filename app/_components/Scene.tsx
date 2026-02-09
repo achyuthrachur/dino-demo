@@ -7,6 +7,7 @@ import { Suspense } from 'react';
 import * as THREE from 'three';
 import { TrexScene } from './TrexScene';
 import { CameraRig } from './CameraRig';
+import { GestureController } from './GestureController';
 
 function SceneBackground() {
   const { scene } = useThree();
@@ -62,6 +63,9 @@ export function Scene() {
 
       {/* Camera dolly rig */}
       <CameraRig />
+
+      {/* Gesture-based camera control */}
+      <GestureController />
 
       {/* Controls */}
       <OrbitControls

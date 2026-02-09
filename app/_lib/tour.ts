@@ -16,6 +16,8 @@ export interface ChapterDef {
   facts: string[];
   /** Skeleton bone name to anchor leader lines (omit = no lines) */
   anchorBone?: string;
+  /** Override panel gap from bone in px (default 100) */
+  panelGap?: number;
 }
 
 export const CHAPTERS: ChapterDef[] = [
@@ -47,6 +49,7 @@ export const CHAPTERS: ChapterDef[] = [
       'Serrated teeth up to 30cm (12 inches) long could crush bone.',
     ],
     anchorBone: 'Cabeza_ArmatureRexy',
+    panelGap: 9999,
   },
   {
     id: 'arms',
@@ -61,7 +64,7 @@ export const CHAPTERS: ChapterDef[] = [
       'Arms had only two functional clawed fingers per hand.',
       'Scientists debate their purpose: mating grip, prey stabilization, or getting up from prone.',
     ],
-    anchorBone: 'Pecho_ArmatureRexy',
+    anchorBone: 'BrazoL_ArmatureRexy',
   },
   {
     id: 'legs_tail',
@@ -76,7 +79,7 @@ export const CHAPTERS: ChapterDef[] = [
       'Leg bones were thick and robust, built for powerful but not agile movement.',
       'Footprints suggest a stride length of about 3.7 meters (12 ft).',
     ],
-    anchorBone: 'Cola1_ArmatureRexy',
+    anchorBone: 'Cola6_ArmatureRexy',
   },
   {
     id: 'reassembled',
