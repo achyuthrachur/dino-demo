@@ -13,6 +13,7 @@ import {
 export type SocketStatus = 'disconnected' | 'connecting' | 'connected';
 
 interface UseSessionSocketOptions {
+  enabled?: boolean;
   role: ClientRole;
   session: string;
   clientId: string;
@@ -27,6 +28,7 @@ interface UseSessionSocketResult {
 }
 
 export function useSessionSocket({
+  enabled = true,
   role,
   session,
   clientId,
@@ -47,16 +49,17 @@ export function useSessionSocket({
   }, [onMessage]);
 
   const send = useCallback((message: WireMessage) => {
+    if (!enabled) return false;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return false;
     }
     ws.send(JSON.stringify(message));
     return true;
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    if (!session || !bridgeUrl) {
+    if (!enabled || !session || !bridgeUrl) {
       setStatus('disconnected');
       return;
     }
@@ -132,9 +135,10 @@ export function useSessionSocket({
       }
       setStatus('disconnected');
     };
-  }, [bridgeUrl, clientId, role, session]);
+  }, [bridgeUrl, clientId, enabled, role, session]);
 
   useEffect(() => {
+    if (!enabled) return;
     if (status !== 'connected') return;
     const heartbeat = window.setInterval(() => {
       const ping: ClientPing = {
@@ -148,7 +152,7 @@ export function useSessionSocket({
     return () => {
       window.clearInterval(heartbeat);
     };
-  }, [clientId, send, session, status]);
+  }, [clientId, enabled, send, session, status]);
 
   return { status, lastError, send };
 }

@@ -13,6 +13,7 @@ import {
   resolveBridgeUrl,
   sanitizeSessionCode,
 } from '@/app/_lib/arcade/session';
+import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
 const KNOB_SIZE = 94;
@@ -29,6 +30,8 @@ export default function ControllerPage() {
   const [statusNote, setStatusNote] = useState('Waiting for bridge...');
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
   const [joyUi, setJoyUi] = useState<JoyVector>({ x: 0, y: 0 });
+  const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
+  const useAbly = Boolean(ablyKey);
 
   const padRef = useRef<HTMLDivElement>(null);
   const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
@@ -40,10 +43,10 @@ export default function ControllerPage() {
     const params = new URLSearchParams(window.location.search);
     const initialSession = sanitizeSessionCode(params.get('session')) || createSessionCode();
     setSession(initialSession);
-    setBridgeUrl(resolveBridgeUrl(window.location));
+    setBridgeUrl(useAbly ? 'ably://realtime' : resolveBridgeUrl(window.location));
     const bridgeOverride = params.get('bridge');
     const hosted = window.location.hostname.includes('vercel.app');
-    if (hosted && !bridgeOverride) {
+    if (hosted && !bridgeOverride && !useAbly) {
       setDeployWarning(
         'Controller needs a local bridge from the Mac host. Open the Mac /arcade page running on LAN and use its generated controller URL.',
       );
@@ -54,7 +57,7 @@ export default function ControllerPage() {
       const nextUrl = `${window.location.pathname}?${params.toString()}`;
       window.history.replaceState({}, '', nextUrl);
     }
-  }, []);
+  }, [useAbly]);
 
   useEffect(() => {
     const previousTouchAction = document.body.style.touchAction;
@@ -80,13 +83,30 @@ export default function ControllerPage() {
     }
   }, [session]);
 
-  const { status, lastError, send } = useSessionSocket({
+  const socketTransport = useSessionSocket({
+    enabled: !useAbly,
     role: 'phone',
     session,
     clientId: clientIdRef.current,
     bridgeUrl,
     onMessage: onSocketMessage,
   });
+
+  const ablyTransport = useAblySession({
+    enabled: useAbly,
+    ablyKey,
+    role: 'phone',
+    session,
+    clientId: clientIdRef.current,
+    onMessage: onSocketMessage,
+  });
+
+  const status = useAbly ? ablyTransport.status : socketTransport.status;
+  const lastError = useAbly ? ablyTransport.lastError : socketTransport.lastError;
+  const send = useCallback((message: WireMessage) => {
+    if (useAbly) return ablyTransport.send(message);
+    return socketTransport.send(message);
+  }, [ablyTransport, socketTransport, useAbly]);
 
   useEffect(() => {
     if (status !== 'connected' || !session) return;
@@ -199,14 +219,19 @@ export default function ControllerPage() {
           <code>{clientIdRef.current}</code>
         </div>
         <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
+          Transport <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code>
+        </div>
+        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
           Bridge <code>{bridgeUrl || 'ws://<host>:8787'}</code>
         </div>
         <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
           Status {lastError ?? statusNote}
         </div>
-        <div style={{ fontSize: '0.76rem', color: '#F7D154' }}>
-          Requires Mac bridge process: `npm run bridge`
-        </div>
+        {!useAbly && (
+          <div style={{ fontSize: '0.76rem', color: '#F7D154' }}>
+            Requires Mac bridge process: `npm run bridge`
+          </div>
+        )}
         {deployWarning && (
           <div style={{ fontSize: '0.76rem', color: '#FFB0B0' }}>{deployWarning}</div>
         )}

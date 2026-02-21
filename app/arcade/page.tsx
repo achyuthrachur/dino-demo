@@ -12,6 +12,7 @@ import {
   resolveBridgeUrl,
   sanitizeSessionCode,
 } from '@/app/_lib/arcade/session';
+import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 import { useStore } from '@/app/_lib/store';
 
@@ -36,6 +37,8 @@ export default function ArcadePage() {
 
   const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
   const clientIdRef = useRef(createClientId('mac'));
+  const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
+  const useAbly = Boolean(ablyKey);
 
   const mode = useStore((s) => s.mode);
   const walkLoopEnabled = useStore((s) => s.walkLoopEnabled);
@@ -58,15 +61,18 @@ export default function ArcadePage() {
     }
 
     setSession(initialSession);
-    setBridgeUrl(resolveBridgeUrl(window.location));
+    setBridgeUrl(useAbly ? 'ably://realtime' : resolveBridgeUrl(window.location));
     setControllerUrl(url.toString());
     const hosted = window.location.hostname.includes('vercel.app');
-    if (hosted && !bridgeOverride) {
+    if (hosted && !bridgeOverride && !useAbly) {
       setDeployWarning(
         'This deployed URL cannot host the local WebSocket bridge. Run `npm run bridge` + `npm run dev:lan`, then open /arcade on your Mac LAN IP.',
       );
     }
-    if (window.location.hostname === 'localhost' || window.location.hostname.startsWith('127.')) {
+    if (
+      !useAbly &&
+      (window.location.hostname === 'localhost' || window.location.hostname.startsWith('127.'))
+    ) {
       setLanWarning('Open this page with your Mac LAN IP, not localhost, so iPhone can connect.');
     }
 
@@ -75,7 +81,7 @@ export default function ArcadePage() {
       const nextUrl = `${window.location.pathname}?${params.toString()}`;
       window.history.replaceState({}, '', nextUrl);
     }
-  }, []);
+  }, [useAbly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,13 +164,26 @@ export default function ArcadePage() {
     }
   }, [requestMode, session, setWalkLoopEnabled, toggleWalkLoop, triggerRoar]);
 
-  const { status, lastError } = useSessionSocket({
+  const socketTransport = useSessionSocket({
+    enabled: !useAbly,
     role: 'mac',
     session,
     clientId: clientIdRef.current,
     bridgeUrl,
     onMessage: onSocketMessage,
   });
+
+  const ablyTransport = useAblySession({
+    enabled: useAbly,
+    ablyKey,
+    role: 'mac',
+    session,
+    clientId: clientIdRef.current,
+    onMessage: onSocketMessage,
+  });
+
+  const status = useAbly ? ablyTransport.status : socketTransport.status;
+  const lastError = useAbly ? ablyTransport.lastError : socketTransport.lastError;
 
   const staleInput = useMemo(() => {
     if (!lastInputAt) return true;
@@ -220,6 +239,7 @@ export default function ArcadePage() {
 
         <div style={{ display: 'grid', gap: '0.35rem', color: 'var(--fg1)', fontSize: '0.83rem' }}>
           <div>Session: <strong style={{ color: 'var(--fg0)' }}>{session || '----'}</strong></div>
+          <div>Transport: <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code></div>
           <div>Bridge: <code>{bridgeUrl || 'ws://<host>:8787'}</code></div>
           <div>Controller: <code style={{ wordBreak: 'break-all' }}>{controllerUrl || '(loading...)'}</code></div>
           <div>Mode: <strong style={{ color: 'var(--fg0)' }}>{mode}</strong></div>
@@ -228,7 +248,7 @@ export default function ArcadePage() {
           <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
           <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
           <div>Status: <span>{lastError ?? statusNote}</span></div>
-          <div style={{ color: '#F7D154' }}>Bridge process required on Mac: `npm run bridge`</div>
+          {!useAbly && <div style={{ color: '#F7D154' }}>Bridge process required on Mac: `npm run bridge`</div>}
           {deployWarning && <div style={{ color: '#FFB0B0' }}>{deployWarning}</div>}
           {lanWarning && <div style={{ color: '#F7D154' }}>{lanWarning}</div>}
         </div>

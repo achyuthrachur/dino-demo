@@ -204,3 +204,15 @@ export function safeParseWireMessage(raw: string): WireMessage | null {
       return null;
   }
 }
+
+export function safeParseWireMessageFromUnknown(raw: unknown): WireMessage | null {
+  if (typeof raw === 'string') {
+    return safeParseWireMessage(raw);
+  }
+
+  try {
+    return safeParseWireMessage(JSON.stringify(raw));
+  } catch {
+    return null;
+  }
+}
