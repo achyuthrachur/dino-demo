@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { Environment, OrbitControls } from '@react-three/drei';
-import { Suspense, useMemo, useState, type CSSProperties } from 'react';
+import { Suspense, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { RexyAnimLabModel } from '@/app/_components/models/RexyAnimLabModel';
 
 function LoadingFallback() {
@@ -24,6 +24,7 @@ export default function ArcadeAnimLabPage() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [search, setSearch] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
+  const [modelRadius, setModelRadius] = useState(6);
 
   const filteredNames = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -57,7 +58,7 @@ export default function ArcadeAnimLabPage() {
   return (
     <main style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
       <Canvas
-        camera={{ position: [0, 2.2, 9], fov: 42 }}
+        camera={{ position: [0, 2.2, 9], fov: 42, near: 0.01, far: 10000 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         style={{ position: 'fixed', inset: 0 }}
       >
@@ -70,11 +71,12 @@ export default function ArcadeAnimLabPage() {
         <pointLight color="#5AD4FF" intensity={4.5} position={[6, 2, -10]} distance={32} decay={2} />
 
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.4, 0]} receiveShadow>
-          <circleGeometry args={[16, 64]} />
+          <circleGeometry args={[220, 96]} />
           <meshStandardMaterial color="#0d1325" />
         </mesh>
 
         <Suspense fallback={<LoadingFallback />}>
+          <AutoFitCamera radius={modelRadius} />
           <RexyAnimLabModel
             clipToPlay={selectedClip}
             playNonce={playNonce}
@@ -82,6 +84,7 @@ export default function ArcadeAnimLabPage() {
             playbackSpeed={playbackSpeed}
             onClipNamesChange={setClipNames}
             onNowPlayingChange={setNowPlaying}
+            onBoundsRadiusChange={setModelRadius}
           />
         </Suspense>
 
@@ -93,7 +96,7 @@ export default function ArcadeAnimLabPage() {
           rotateSpeed={0.65}
           zoomSpeed={0.9}
           minDistance={3}
-          maxDistance={28}
+          maxDistance={1200}
         />
       </Canvas>
 
@@ -221,6 +224,32 @@ export default function ArcadeAnimLabPage() {
       </section>
     </main>
   );
+}
+
+function AutoFitCamera({ radius }: { radius: number }) {
+  const { camera, controls } = useThree();
+
+  useEffect(() => {
+    const safeRadius = Math.max(0.1, Math.min(radius, 400));
+    const distance = Math.max(8, Math.min(safeRadius * 2.8, 900));
+
+    camera.position.set(0, safeRadius * 0.45, distance);
+    camera.near = Math.max(0.01, distance / 4000);
+    camera.far = Math.max(2200, distance * 16);
+    camera.updateProjectionMatrix();
+
+    const orbit = controls as {
+      target?: { set: (x: number, y: number, z: number) => void };
+      update?: () => void;
+    } | null;
+
+    if (orbit?.target) {
+      orbit.target.set(0, 0, 0);
+      orbit.update?.();
+    }
+  }, [camera, controls, radius]);
+
+  return null;
 }
 
 const navLinkStyle: CSSProperties = {

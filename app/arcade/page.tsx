@@ -30,6 +30,7 @@ export default function ArcadePage() {
   const [resetToken, setResetToken] = useState(0);
   const [timeTick, setTimeTick] = useState(0);
   const [lanWarning, setLanWarning] = useState<string | null>(null);
+  const [deployWarning, setDeployWarning] = useState<string | null>(null);
 
   const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
   const clientIdRef = useRef(createClientId('mac'));
@@ -57,6 +58,12 @@ export default function ArcadePage() {
     setSession(initialSession);
     setBridgeUrl(resolveBridgeUrl(window.location));
     setControllerUrl(url.toString());
+    const hosted = window.location.hostname.includes('vercel.app');
+    if (hosted && !bridgeOverride) {
+      setDeployWarning(
+        'This deployed URL cannot host the local WebSocket bridge. Run `npm run bridge` + `npm run dev:lan`, then open /arcade on your Mac LAN IP.',
+      );
+    }
     if (window.location.hostname === 'localhost' || window.location.hostname.startsWith('127.')) {
       setLanWarning('Open this page with your Mac LAN IP, not localhost, so iPhone can connect.');
     }
@@ -192,6 +199,8 @@ export default function ArcadePage() {
           <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
           <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
           <div>Status: <span>{lastError ?? statusNote}</span></div>
+          <div style={{ color: '#F7D154' }}>Bridge process required on Mac: `npm run bridge`</div>
+          {deployWarning && <div style={{ color: '#FFB0B0' }}>{deployWarning}</div>}
           {lanWarning && <div style={{ color: '#F7D154' }}>{lanWarning}</div>}
         </div>
 

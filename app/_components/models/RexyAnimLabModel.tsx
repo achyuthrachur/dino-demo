@@ -15,6 +15,7 @@ interface RexyAnimLabModelProps {
   playbackSpeed: number;
   onClipNamesChange: (clipNames: string[]) => void;
   onNowPlayingChange: (clipName: string | null) => void;
+  onBoundsRadiusChange?: (radius: number) => void;
 }
 
 export function RexyAnimLabModel({
@@ -24,6 +25,7 @@ export function RexyAnimLabModel({
   playbackSpeed,
   onClipNamesChange,
   onNowPlayingChange,
+  onBoundsRadiusChange,
 }: RexyAnimLabModelProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(GLB_PATH);
@@ -43,16 +45,22 @@ export function RexyAnimLabModel({
   }, [loopEnabled]);
 
   const transform = useMemo(() => {
+    scene.updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(scene);
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z, 0.001);
-    const scale = TARGET_SIZE / maxDim;
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Number.isFinite(sphere.radius) && sphere.radius > 0.001
+      ? sphere.radius
+      : TARGET_SIZE * 0.5;
     return {
       centerOffset: [-center.x, -center.y, -center.z] as [number, number, number],
-      scale,
+      radius,
     };
   }, [scene]);
+
+  useEffect(() => {
+    onBoundsRadiusChange?.(transform.radius);
+  }, [onBoundsRadiusChange, transform.radius]);
 
   const clearFadeTimer = useCallback(() => {
     if (fadeStopTimerRef.current !== null) {
@@ -147,7 +155,7 @@ export function RexyAnimLabModel({
   }, [actions, clearFadeTimer]);
 
   return (
-    <group ref={groupRef} scale={transform.scale}>
+    <group ref={groupRef}>
       <group position={transform.centerOffset}>
         <primitive object={scene} />
       </group>

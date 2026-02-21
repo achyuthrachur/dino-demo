@@ -27,6 +27,7 @@ export default function ControllerPage() {
   const [session, setSession] = useState('');
   const [bridgeUrl, setBridgeUrl] = useState('');
   const [statusNote, setStatusNote] = useState('Waiting for bridge...');
+  const [deployWarning, setDeployWarning] = useState<string | null>(null);
   const [joyUi, setJoyUi] = useState<JoyVector>({ x: 0, y: 0 });
 
   const padRef = useRef<HTMLDivElement>(null);
@@ -40,6 +41,13 @@ export default function ControllerPage() {
     const initialSession = sanitizeSessionCode(params.get('session')) || createSessionCode();
     setSession(initialSession);
     setBridgeUrl(resolveBridgeUrl(window.location));
+    const bridgeOverride = params.get('bridge');
+    const hosted = window.location.hostname.includes('vercel.app');
+    if (hosted && !bridgeOverride) {
+      setDeployWarning(
+        'Controller needs a local bridge from the Mac host. Open the Mac /arcade page running on LAN and use its generated controller URL.',
+      );
+    }
 
     if (params.get('session') !== initialSession) {
       params.set('session', initialSession);
@@ -196,6 +204,12 @@ export default function ControllerPage() {
         <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
           Status {lastError ?? statusNote}
         </div>
+        <div style={{ fontSize: '0.76rem', color: '#F7D154' }}>
+          Requires Mac bridge process: `npm run bridge`
+        </div>
+        {deployWarning && (
+          <div style={{ fontSize: '0.76rem', color: '#FFB0B0' }}>{deployWarning}</div>
+        )}
       </header>
 
       <section
