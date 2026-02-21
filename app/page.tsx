@@ -14,6 +14,7 @@ import { ToastOverlay } from './_components/ToastOverlay';
 import { CameraPreview } from './_components/CameraPreview';
 import { HeroTitle } from './_components/HeroTitle';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 function DevToolsLoader() {
   const searchParams = useSearchParams();
@@ -48,6 +49,26 @@ export default function HomePage() {
       <GestureStatusPill />
       <ToastOverlay />
       <CameraPreview />
+      <Link
+        href="/arcade"
+        style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 20,
+          border: '1px solid rgba(124,247,198,0.4)',
+          background: 'rgba(124,247,198,0.12)',
+          color: 'var(--accent)',
+          textDecoration: 'none',
+          borderRadius: 8,
+          fontWeight: 700,
+          fontSize: '0.8rem',
+          letterSpacing: '0.04em',
+          padding: '0.45rem 0.75rem',
+        }}
+      >
+        ARCADE MODE
+      </Link>
       <Suspense fallback={null}>
         <DevToolsLoader />
       </Suspense>

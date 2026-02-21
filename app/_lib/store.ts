@@ -15,6 +15,9 @@ interface AppState {
   roarRequested: boolean;
   hasWalkClip: boolean;
   walkRequested: boolean;
+  walkLoopEnabled: boolean;
+  audioUnlocked: boolean;
+  audioUnlockRequested: boolean;
 
   // Stage 3: Gesture input
   gestureEnabled: boolean;
@@ -41,6 +44,11 @@ interface AppState {
   clearRoarRequest: () => void;
   triggerWalk: () => void;
   clearWalkRequest: () => void;
+  toggleWalkLoop: () => void;
+  setWalkLoopEnabled: (enabled: boolean) => void;
+  requestAudioUnlock: () => void;
+  clearAudioUnlockRequest: () => void;
+  setAudioUnlocked: (unlocked: boolean) => void;
 
   // Stage 3 actions
   setGestureEnabled: (enabled: boolean) => void;
@@ -63,6 +71,9 @@ export const useStore = create<AppState>((set, get) => ({
   roarRequested: false,
   hasWalkClip: false,
   walkRequested: false,
+  walkLoopEnabled: false,
+  audioUnlocked: false,
+  audioUnlockRequested: false,
 
   // Stage 3: Gesture
   gestureEnabled: false,
@@ -105,6 +116,11 @@ export const useStore = create<AppState>((set, get) => ({
   clearRoarRequest: () => set({ roarRequested: false }),
   triggerWalk: () => set({ walkRequested: true }),
   clearWalkRequest: () => set({ walkRequested: false }),
+  toggleWalkLoop: () => set((state) => ({ walkLoopEnabled: !state.walkLoopEnabled })),
+  setWalkLoopEnabled: (enabled) => set({ walkLoopEnabled: enabled }),
+  requestAudioUnlock: () => set({ audioUnlockRequested: true }),
+  clearAudioUnlockRequest: () => set({ audioUnlockRequested: false }),
+  setAudioUnlocked: (unlocked) => set({ audioUnlocked: unlocked }),
 
   // Stage 3 actions
   setGestureEnabled: (enabled) => set({ gestureEnabled: enabled }),

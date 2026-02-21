@@ -45,7 +45,14 @@
       "Bash(git merge:*)",
       "Bash(node:*)",
       "Bash(del:*)",
-      "Bash(npx next dev:*)"
+      "Bash(npx next dev:*)",
+      "Bash(npx next build)",
+      "Bash(npm ls:*)",
+      "Bash(git status:*)",
+      "Bash(gh api:*)",
+      "Bash(git rm:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

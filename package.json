@@ -5,6 +5,8 @@
   "description": "Digital Museum - Infinite Mesozoic: Interactive 3D dinosaur exhibit",
   "scripts": {
     "dev": "next dev",
+    "dev:lan": "next dev -H 0.0.0.0 -p 3000",
+    "bridge": "node scripts/arcade-bridge.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

@@ -22,6 +22,7 @@ export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
   const setHasWalkClip = useStore((s) => s.setHasWalkClip);
   const walkRequested = useStore((s) => s.walkRequested);
   const clearWalkRequest = useStore((s) => s.clearWalkRequest);
+  const walkLoopEnabled = useStore((s) => s.walkLoopEnabled);
   const mode = useStore((s) => s.mode);
   const directorPhase = useDirector((s) => s.phase);
 
@@ -66,6 +67,7 @@ export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
 
     clearWalkRequest();
 
+    if (walkLoopEnabled) return;
     if (!walkClipName || !actions[walkClipName] || mode !== 'skeleton') return;
 
     // Block walk when touring — bones are being manipulated by explode
@@ -90,7 +92,36 @@ export function TrexSkeleton({ opacity, onSceneLoaded }: Props) {
       mixer.removeEventListener('finished', onFinished);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walkRequested]);
+  }, [walkRequested, walkLoopEnabled]);
+
+  // Walk loop toggle (Arcade mode uses this path)
+  useEffect(() => {
+    if (!walkClipName || !actions[walkClipName]) return;
+    const walkAction = actions[walkClipName]!;
+
+    const canLoop = walkLoopEnabled && mode === 'skeleton' && directorPhase === 'home';
+    if (!canLoop) {
+      walkAction.fadeOut(0.2);
+      const timeout = window.setTimeout(() => {
+        walkAction.stop();
+      }, 220);
+      return () => {
+        window.clearTimeout(timeout);
+      };
+    }
+
+    walkAction.reset();
+    walkAction.setLoop(THREE.LoopRepeat, Infinity);
+    walkAction.clampWhenFinished = false;
+    walkAction.fadeIn(0.2).play();
+
+    return () => {
+      walkAction.fadeOut(0.2);
+      window.setTimeout(() => {
+        walkAction.stop();
+      }, 220);
+    };
+  }, [actions, directorPhase, mode, walkClipName, walkLoopEnabled]);
 
   useFrame(() => {
     setSceneOpacity(scene, opacity.current);
