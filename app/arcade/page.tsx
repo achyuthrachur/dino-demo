@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import QRCode from 'qrcode';
 import { ArcadeScene } from '@/app/_components/ArcadeScene';
 import { ARCADE_CONFIG, type JoyVector } from '@/app/_lib/arcade/config';
 import { isControllerAction, isControllerState, type WireMessage } from '@/app/_lib/arcade/protocol';
@@ -31,6 +32,7 @@ export default function ArcadePage() {
   const [timeTick, setTimeTick] = useState(0);
   const [lanWarning, setLanWarning] = useState<string | null>(null);
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
   const clientIdRef = useRef(createClientId('mac'));
@@ -74,6 +76,33 @@ export default function ArcadePage() {
       window.history.replaceState({}, '', nextUrl);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!controllerUrl) {
+      setQrDataUrl('');
+      return;
+    }
+
+    QRCode.toDataURL(controllerUrl, {
+      width: 220,
+      margin: 1,
+      color: {
+        dark: '#EAF0FF',
+        light: '#00000000',
+      },
+    })
+      .then((url: string) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl('');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [controllerUrl]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -203,6 +232,27 @@ export default function ArcadePage() {
           {deployWarning && <div style={{ color: '#FFB0B0' }}>{deployWarning}</div>}
           {lanWarning && <div style={{ color: '#F7D154' }}>{lanWarning}</div>}
         </div>
+
+        {qrDataUrl && (
+          <div style={{ display: 'grid', justifyItems: 'start', gap: '0.35rem' }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--fg1)' }}>
+              Scan with iPhone camera:
+            </div>
+            <img
+              src={qrDataUrl}
+              alt="Controller URL QR code"
+              width={160}
+              height={160}
+              style={{
+                width: 160,
+                height: 160,
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.24)',
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            />
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
