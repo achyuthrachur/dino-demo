@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -15,7 +15,8 @@ const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
 const TERRAIN_BOUNDS_INSET = 0.8;
 const GROUND_CLEARANCE_OFFSET = 0.04;
-const GROUND_RAYCAST_HZ = 60;
+const GROUND_RAYCAST_HZ = 30;
+const GROUND_IDLE_RAYCAST_HZ = 12;
 const GROUND_RAYCAST_MAX_DISTANCE = 400;
 const GROUND_RAYCAST_TOP_PADDING = 20;
 const GROUND_Y_SMOOTHING_PER_SECOND = 14;
@@ -519,6 +520,14 @@ function RexyArcadeModel({
     onBoundsRadiusChange?.(transform.radius);
   }, [onBoundsRadiusChange, transform.radius]);
 
+  useEffect(() => {
+    scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.frustumCulled = false;
+    });
+  }, [scene]);
+
   const clearFadeStopTimer = useCallback(() => {
     if (fadeStopTimerRef.current !== null) {
       window.clearTimeout(fadeStopTimerRef.current);
@@ -939,7 +948,8 @@ function ArcadeRig({
     const didClampXZ = clampToPlayableXZ(group);
 
     raycastAccumulatorRef.current += delta;
-    const raycastIntervalSeconds = 1 / GROUND_RAYCAST_HZ;
+    const raycastHz = locomotionRef.current.isMoving ? GROUND_RAYCAST_HZ : GROUND_IDLE_RAYCAST_HZ;
+    const raycastIntervalSeconds = 1 / raycastHz;
     const shouldSampleGround = forceGroundSnapRef.current || raycastAccumulatorRef.current >= raycastIntervalSeconds;
 
     let didHitGround = false;
@@ -1081,7 +1091,7 @@ function ArcadeFollowCamera({ actorRef, aimRef, radius, resetToken }: ArcadeFoll
   return null;
 }
 
-export function ArcadeScene({
+function ArcadeSceneImpl({
   moveRef,
   aimRef,
   resetToken,
@@ -1134,6 +1144,8 @@ export function ArcadeScene({
     </Canvas>
   );
 }
+
+export const ArcadeScene = memo(ArcadeSceneImpl);
 
 useGLTF.preload(GLB_PATH);
 useGLTF.preload(TERRAIN_GLB_PATH);

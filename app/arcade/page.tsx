@@ -48,7 +48,9 @@ export default function ArcadePage() {
   const moveTargetRef = useRef<JoyVector>({ x: 0, y: 0 });
   const aimTargetRef = useRef<JoyVector>({ x: 0, y: 0 });
   const activeInputControllerRef = useRef<string | null>(null);
+  const activeControllerStateRef = useRef<string | null>(null);
   const lastInputSeqRef = useRef(-1);
+  const lastInputAtRef = useRef<number | null>(null);
   const clientIdRef = useRef(createClientId('mac'));
   const cueNonceRef = useRef(1);
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
@@ -147,8 +149,11 @@ export default function ArcadePage() {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setTimeTick(Date.now());
-    }, 1000);
+      const now = Date.now();
+      setTimeTick(now);
+      const latest = lastInputAtRef.current;
+      setLastInputAt((prev) => (prev === latest ? prev : latest));
+    }, 250);
     return () => {
       window.clearInterval(interval);
     };
@@ -169,14 +174,20 @@ export default function ArcadePage() {
       moveTargetRef.current.y = message.move.y;
       aimTargetRef.current.x = message.aim.x;
       aimTargetRef.current.y = message.aim.y;
-      setActiveControllerId(message.clientId);
-      setLastInputAt(message.t);
+      if (activeControllerStateRef.current !== message.clientId) {
+        activeControllerStateRef.current = message.clientId;
+        setActiveControllerId(message.clientId);
+      }
+      lastInputAtRef.current = message.t;
       return;
     }
 
     if (isControllerAction(message)) {
-      setActiveControllerId(message.clientId);
-      setLastInputAt(message.t);
+      if (activeControllerStateRef.current !== message.clientId) {
+        activeControllerStateRef.current = message.clientId;
+        setActiveControllerId(message.clientId);
+      }
+      lastInputAtRef.current = message.t;
 
       switch (message.action) {
         case 'anim_minion_spawn':
@@ -216,7 +227,10 @@ export default function ArcadePage() {
     if (message.type === 'status') {
       setStatusNote(message.message ?? (message.ok ? 'Connected' : 'Bridge status'));
       if (message.activeControllerId) {
-        setActiveControllerId(message.activeControllerId);
+        if (activeControllerStateRef.current !== message.activeControllerId) {
+          activeControllerStateRef.current = message.activeControllerId;
+          setActiveControllerId(message.activeControllerId);
+        }
       }
     }
   }, [session, triggerAnimation]);
@@ -255,7 +269,11 @@ export default function ArcadePage() {
     aimTargetRef.current.y = 0;
     if (status !== 'connected') {
       activeInputControllerRef.current = null;
+      activeControllerStateRef.current = null;
       lastInputSeqRef.current = -1;
+      lastInputAtRef.current = null;
+      setLastInputAt(null);
+      setActiveControllerId(null);
     }
   }, [staleInput, status]);
 
