@@ -8,7 +8,7 @@ import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/con
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const TERRAIN_GLB_PATH = '/models/environments/haytor_dartmoor_terrain.glb';
-const TERRAIN_SCALE = 1;
+const TERRAIN_SCALE = 0.35;
 const FADE_SECONDS = 0.2;
 const WALK_METERS_PER_SECOND = 3.2;
 const TURN_RADIANS_PER_SECOND = 1.8;
@@ -101,6 +101,7 @@ interface TerrainGroundProps {
 
 function TerrainGround({ terrainRootRef, terrainBoundsRef }: TerrainGroundProps) {
   const groupRef = useRef<THREE.Group>(null);
+  const { gl } = useThree();
   const { scene } = useGLTF(TERRAIN_GLB_PATH);
 
   const transform = useMemo(() => {
@@ -138,6 +139,22 @@ function TerrainGround({ terrainRootRef, terrainBoundsRef }: TerrainGroundProps)
       terrainBoundsRef.current = null;
     };
   }, [terrainBoundsRef, terrainRootRef, transform.bounds]);
+
+  useEffect(() => {
+    const anisotropy = Math.max(1, Math.min(16, gl.capabilities.getMaxAnisotropy()));
+    scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.material) return;
+
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        const textured = material as THREE.Material & { map?: THREE.Texture | null };
+        if (!textured.map) continue;
+        textured.map.anisotropy = anisotropy;
+        textured.map.needsUpdate = true;
+      }
+    });
+  }, [gl, scene]);
 
   return (
     <group ref={groupRef} position={transform.offset} scale={[TERRAIN_SCALE, TERRAIN_SCALE, TERRAIN_SCALE]}>
