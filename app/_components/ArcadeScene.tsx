@@ -37,12 +37,12 @@ const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
 const CAMERA_DISTANCE_MULTIPLIER = 2.08;
 const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
 const CAMERA_POSITION_SMOOTHING_PER_SECOND = 10;
-const CAMERA_INPUT_SMOOTHING_PER_SECOND = 16;
+const CAMERA_INPUT_SMOOTHING_PER_SECOND = 5;
 const CAMERA_STICK_DEADZONE = 0.005;
-const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(1.2);
-const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.0);
+const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(8);
+const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(6);
 const LOCOMOTION_MIN_TIME_SCALE = 1.0;
-const LOCOMOTION_MAX_TIME_SCALE = 1.45;
+const LOCOMOTION_MAX_TIME_SCALE = 1.15;
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -429,19 +429,25 @@ function createRotationOnlyClip(sourceClip: THREE.AnimationClip, nextName: strin
 function createSpawnWalkLoopClip(baseClip: THREE.AnimationClip): THREE.AnimationClip | null {
   const fps = estimateClipFps(baseClip);
   const totalFrames = Math.max(3, Math.round(baseClip.duration * fps));
-  const startFrame = Math.max(0, Math.floor(totalFrames * 0.18));
-  const endFrame = Math.max(startFrame + 2, Math.floor(totalFrames * 0.86));
+  const startFrame = Math.max(0, Math.floor(totalFrames * 0.30));
+  const endFrame = Math.max(startFrame + 2, Math.floor(totalFrames * 0.70));
   const baseName = `${baseClip.name}__walk_loop`;
 
   if (endFrame - startFrame >= 2) {
     const loopClip = THREE.AnimationUtils.subclip(baseClip, baseName, startFrame, endFrame, fps);
     if (loopClip && loopClip.duration > 0.05) {
-      const sanitized = createRotationOnlyClip(loopClip, baseName);
-      if (sanitized) return sanitized;
+      loopClip.resetDuration();
+      loopClip.optimize();
+      return loopClip;
     }
   }
 
-  return createRotationOnlyClip(baseClip, baseName);
+  // Fallback: use entire clip with all tracks intact
+  const fallback = baseClip.clone();
+  fallback.name = baseName;
+  fallback.resetDuration();
+  fallback.optimize();
+  return fallback;
 }
 
 function prepareAnimationsForArcade(
@@ -550,6 +556,9 @@ function RexyArcadeModel({
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.frustumCulled = false;
+      if (mesh.geometry && !mesh.geometry.boundingSphere) {
+        mesh.geometry.computeBoundingSphere();
+      }
     });
   }, [scene]);
 
