@@ -15,7 +15,7 @@ const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
 const TERRAIN_BOUNDS_INSET = 0.8;
 const GROUND_CLEARANCE_OFFSET = 0.04;
-const GROUND_RAYCAST_HZ = 30;
+const GROUND_RAYCAST_HZ = 20;
 const GROUND_IDLE_RAYCAST_HZ = 12;
 const GROUND_RAYCAST_MAX_DISTANCE = 400;
 const GROUND_RAYCAST_TOP_PADDING = 20;
@@ -41,6 +41,8 @@ const CAMERA_INPUT_SMOOTHING_PER_SECOND = 16;
 const CAMERA_STICK_DEADZONE = 0.005;
 const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(1.2);
 const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.0);
+const LOCOMOTION_MIN_TIME_SCALE = 1.0;
+const LOCOMOTION_MAX_TIME_SCALE = 1.45;
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -405,18 +407,41 @@ function estimateClipFps(clip: THREE.AnimationClip): number {
   return Math.max(24, Math.min(120, fps));
 }
 
+function createRotationOnlyClip(sourceClip: THREE.AnimationClip, nextName: string): THREE.AnimationClip | null {
+  const clipped = sourceClip.clone();
+  clipped.name = nextName;
+  clipped.tracks = clipped.tracks
+    .filter((track) => {
+      if (track instanceof THREE.VectorKeyframeTrack && track.name.toLowerCase().endsWith('.position')) {
+        return false;
+      }
+      return true;
+    })
+    .map((track) => track.clone());
+
+  if (clipped.tracks.length === 0) return null;
+  clipped.resetDuration();
+  clipped.optimize();
+  if (clipped.duration <= 0.05) return null;
+  return clipped;
+}
+
 function createSpawnWalkLoopClip(baseClip: THREE.AnimationClip): THREE.AnimationClip | null {
   const fps = estimateClipFps(baseClip);
   const totalFrames = Math.max(3, Math.round(baseClip.duration * fps));
   const startFrame = Math.max(0, Math.floor(totalFrames * 0.18));
   const endFrame = Math.max(startFrame + 2, Math.floor(totalFrames * 0.86));
-  if (endFrame - startFrame < 2) return null;
+  const baseName = `${baseClip.name}__walk_loop`;
 
-  const loopClip = THREE.AnimationUtils.subclip(baseClip, `${baseClip.name}__walk_loop`, startFrame, endFrame, fps);
-  if (!loopClip || loopClip.duration <= 0.05) return null;
-  loopClip.resetDuration();
-  loopClip.optimize();
-  return loopClip;
+  if (endFrame - startFrame >= 2) {
+    const loopClip = THREE.AnimationUtils.subclip(baseClip, baseName, startFrame, endFrame, fps);
+    if (loopClip && loopClip.duration > 0.05) {
+      const sanitized = createRotationOnlyClip(loopClip, baseName);
+      if (sanitized) return sanitized;
+    }
+  }
+
+  return createRotationOnlyClip(baseClip, baseName);
 }
 
 function prepareAnimationsForArcade(
@@ -649,7 +674,7 @@ function RexyArcadeModel({
     const locomotionAction = locomotionActionRef.current ?? activeAction;
     locomotionActionRef.current = locomotionAction;
     const speedNorm = THREE.MathUtils.clamp(locomotionRef.current.speedNorm, 0, 1);
-    const targetTimeScale = THREE.MathUtils.lerp(0.75, 1.25, speedNorm);
+    const targetTimeScale = THREE.MathUtils.lerp(LOCOMOTION_MIN_TIME_SCALE, LOCOMOTION_MAX_TIME_SCALE, speedNorm);
     const currentScale = locomotionAction.getEffectiveTimeScale();
     const smoothedScale = THREE.MathUtils.damp(currentScale, targetTimeScale, 10, delta);
     locomotionAction.setEffectiveTimeScale(smoothedScale);
@@ -950,7 +975,9 @@ function ArcadeRig({
     raycastAccumulatorRef.current += delta;
     const raycastHz = locomotionRef.current.isMoving ? GROUND_RAYCAST_HZ : GROUND_IDLE_RAYCAST_HZ;
     const raycastIntervalSeconds = 1 / raycastHz;
-    const shouldSampleGround = forceGroundSnapRef.current || raycastAccumulatorRef.current >= raycastIntervalSeconds;
+    const shouldSampleGround =
+      forceGroundSnapRef.current ||
+      (locomotionRef.current.isMoving && raycastAccumulatorRef.current >= raycastIntervalSeconds);
 
     let didHitGround = false;
     if (shouldSampleGround) {
