@@ -7,10 +7,18 @@ import * as THREE from 'three';
 import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/config';
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
+const TERRAIN_GLB_PATH = '/models/environments/haytor_dartmoor_terrain.glb';
+const TERRAIN_SCALE = 1;
 const FADE_SECONDS = 0.2;
 const WALK_METERS_PER_SECOND = 3.2;
 const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
+const TERRAIN_BOUNDS_INSET = 0.8;
+const GROUND_CLEARANCE_OFFSET = 0.04;
+const GROUND_RAYCAST_HZ = 30;
+const GROUND_RAYCAST_MAX_DISTANCE = 400;
+const GROUND_RAYCAST_TOP_PADDING = 20;
+const GROUND_Y_SMOOTHING_PER_SECOND = 14;
 const CAMERA_YAW_RADIANS_PER_SECOND = 2.15;
 const CAMERA_PITCH_RADIANS_PER_SECOND = 2.25;
 const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
@@ -29,9 +37,20 @@ export interface ArcadeAnimCue {
   nonce: number;
 }
 
+interface TerrainBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+
 interface ArcadeRigProps {
   actorRef: MutableRefObject<THREE.Group | null>;
   moveRef: MutableRefObject<JoyVector>;
+  terrainRootRef: MutableRefObject<THREE.Object3D | null>;
+  terrainBoundsRef: MutableRefObject<TerrainBounds | null>;
   resetToken: number;
   animationCue: ArcadeAnimCue | null;
   onModelRadiusChange: (radius: number) => void;
@@ -72,6 +91,58 @@ function LoadingFallback() {
       <boxGeometry args={[0.5, 0.5, 0.5]} />
       <meshStandardMaterial color="#7CF7C6" wireframe />
     </mesh>
+  );
+}
+
+interface TerrainGroundProps {
+  terrainRootRef: MutableRefObject<THREE.Object3D | null>;
+  terrainBoundsRef: MutableRefObject<TerrainBounds | null>;
+}
+
+function TerrainGround({ terrainRootRef, terrainBoundsRef }: TerrainGroundProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene } = useGLTF(TERRAIN_GLB_PATH);
+
+  const transform = useMemo(() => {
+    scene.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(scene);
+    const center = box.getCenter(new THREE.Vector3());
+
+    const offsetX = -center.x * TERRAIN_SCALE;
+    const offsetY = -box.min.y * TERRAIN_SCALE;
+    const offsetZ = -center.z * TERRAIN_SCALE;
+
+    return {
+      offset: [offsetX, offsetY, offsetZ] as [number, number, number],
+      bounds: {
+        minX: (box.min.x - center.x) * TERRAIN_SCALE,
+        maxX: (box.max.x - center.x) * TERRAIN_SCALE,
+        minY: 0,
+        maxY: (box.max.y - box.min.y) * TERRAIN_SCALE,
+        minZ: (box.min.z - center.z) * TERRAIN_SCALE,
+        maxZ: (box.max.z - center.z) * TERRAIN_SCALE,
+      } satisfies TerrainBounds,
+    };
+  }, [scene]);
+
+  useEffect(() => {
+    const terrainRoot = groupRef.current;
+    if (!terrainRoot) return;
+    terrainRootRef.current = terrainRoot;
+    terrainBoundsRef.current = transform.bounds;
+
+    return () => {
+      if (terrainRootRef.current === terrainRoot) {
+        terrainRootRef.current = null;
+      }
+      terrainBoundsRef.current = null;
+    };
+  }, [terrainBoundsRef, terrainRootRef, transform.bounds]);
+
+  return (
+    <group ref={groupRef} position={transform.offset} scale={[TERRAIN_SCALE, TERRAIN_SCALE, TERRAIN_SCALE]}>
+      <primitive object={scene} />
+    </group>
   );
 }
 
@@ -567,6 +638,8 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
 function ArcadeRig({
   actorRef,
   moveRef,
+  terrainRootRef,
+  terrainBoundsRef,
   resetToken,
   animationCue,
   onModelRadiusChange,
@@ -578,6 +651,80 @@ function ArcadeRig({
   const forwardDirectionRef = useRef(new THREE.Vector3());
   const targetVelocityRef = useRef(new THREE.Vector3());
   const velocityRef = useRef(new THREE.Vector3());
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const rayOriginRef = useRef(new THREE.Vector3());
+  const rayDirectionDownRef = useRef(new THREE.Vector3(0, -1, 0));
+  const intersectionsRef = useRef<THREE.Intersection[]>([]);
+  const targetGroundYRef = useRef(0);
+  const lastGoodGroundYRef = useRef<number | null>(null);
+  const raycastAccumulatorRef = useRef(1 / GROUND_RAYCAST_HZ);
+  const forceGroundSnapRef = useRef(true);
+
+  const clampToPlayableXZ = useCallback(
+    (group: THREE.Group): boolean => {
+      const startX = group.position.x;
+      const startZ = group.position.z;
+      const bounds = terrainBoundsRef.current;
+
+      if (bounds) {
+        const innerMinX = bounds.minX + TERRAIN_BOUNDS_INSET;
+        const innerMaxX = bounds.maxX - TERRAIN_BOUNDS_INSET;
+        const innerMinZ = bounds.minZ + TERRAIN_BOUNDS_INSET;
+        const innerMaxZ = bounds.maxZ - TERRAIN_BOUNDS_INSET;
+
+        const minX = innerMinX <= innerMaxX ? innerMinX : (bounds.minX + bounds.maxX) * 0.5;
+        const maxX = innerMinX <= innerMaxX ? innerMaxX : minX;
+        const minZ = innerMinZ <= innerMaxZ ? innerMinZ : (bounds.minZ + bounds.maxZ) * 0.5;
+        const maxZ = innerMinZ <= innerMaxZ ? innerMaxZ : minZ;
+
+        group.position.x = THREE.MathUtils.clamp(group.position.x, minX, maxX);
+        group.position.z = THREE.MathUtils.clamp(group.position.z, minZ, maxZ);
+      } else {
+        const radial = Math.hypot(group.position.x, group.position.z);
+        if (radial > ARENA_RADIUS && radial > 1e-5) {
+          const scale = ARENA_RADIUS / radial;
+          group.position.x *= scale;
+          group.position.z *= scale;
+        }
+      }
+
+      return Math.abs(group.position.x - startX) > 1e-6 || Math.abs(group.position.z - startZ) > 1e-6;
+    },
+    [terrainBoundsRef],
+  );
+
+  const sampleGroundHeight = useCallback(
+    (x: number, z: number, actorY: number): boolean => {
+      const terrainRoot = terrainRootRef.current;
+      if (!terrainRoot) return false;
+
+      const bounds = terrainBoundsRef.current;
+      const raycaster = raycasterRef.current;
+      const rayOrigin = rayOriginRef.current;
+      const hits = intersectionsRef.current;
+
+      const originYFromBounds = bounds ? bounds.maxY + GROUND_RAYCAST_TOP_PADDING : actorY + GROUND_RAYCAST_TOP_PADDING;
+      const originY = Math.max(originYFromBounds, actorY + GROUND_RAYCAST_TOP_PADDING);
+      const rayDistance = bounds
+        ? Math.max(GROUND_RAYCAST_MAX_DISTANCE, bounds.maxY - bounds.minY + GROUND_RAYCAST_TOP_PADDING * 3)
+        : GROUND_RAYCAST_MAX_DISTANCE;
+
+      rayOrigin.set(x, originY, z);
+      raycaster.near = 0;
+      raycaster.far = rayDistance;
+      raycaster.set(rayOrigin, rayDirectionDownRef.current);
+      hits.length = 0;
+      raycaster.intersectObject(terrainRoot, true, hits);
+
+      const hit = hits[0];
+      if (!hit) return false;
+      const nextGroundY = hit.point.y + GROUND_CLEARANCE_OFFSET;
+      targetGroundYRef.current = nextGroundY;
+      lastGoodGroundYRef.current = nextGroundY;
+      return true;
+    },
+    [terrainBoundsRef, terrainRootRef],
+  );
 
   useEffect(() => {
     walkLoopEnabledRef.current = false;
@@ -586,6 +733,10 @@ function ArcadeRig({
     bodyYawRef.current = 0;
     targetVelocityRef.current.set(0, 0, 0);
     velocityRef.current.set(0, 0, 0);
+    raycastAccumulatorRef.current = 1 / GROUND_RAYCAST_HZ;
+    targetGroundYRef.current = 0;
+    lastGoodGroundYRef.current = null;
+    forceGroundSnapRef.current = true;
     if (actorRef.current) {
       actorRef.current.position.set(0, 0, 0);
       actorRef.current.rotation.set(0, 0, 0);
@@ -619,9 +770,38 @@ function ArcadeRig({
     velocityRef.current.lerp(targetVelocityRef.current, alpha);
     group.position.addScaledVector(velocityRef.current, delta);
 
-    const radius = group.position.length();
-    if (radius > ARENA_RADIUS) {
-      group.position.multiplyScalar(ARENA_RADIUS / radius);
+    const didClampXZ = clampToPlayableXZ(group);
+
+    raycastAccumulatorRef.current += delta;
+    const raycastIntervalSeconds = 1 / GROUND_RAYCAST_HZ;
+    const shouldSampleGround = forceGroundSnapRef.current || raycastAccumulatorRef.current >= raycastIntervalSeconds;
+
+    let didHitGround = false;
+    if (shouldSampleGround) {
+      raycastAccumulatorRef.current = 0;
+      didHitGround = sampleGroundHeight(group.position.x, group.position.z, group.position.y);
+      if (!didHitGround && didClampXZ) {
+        didHitGround = sampleGroundHeight(group.position.x, group.position.z, group.position.y);
+      }
+    }
+
+    if (!didHitGround && lastGoodGroundYRef.current !== null) {
+      targetGroundYRef.current = lastGoodGroundYRef.current;
+    }
+
+    const hasGroundTarget = Number.isFinite(targetGroundYRef.current);
+    if (hasGroundTarget) {
+      if (forceGroundSnapRef.current && (didHitGround || lastGoodGroundYRef.current !== null)) {
+        group.position.y = targetGroundYRef.current;
+        forceGroundSnapRef.current = false;
+      } else {
+        group.position.y = THREE.MathUtils.damp(
+          group.position.y,
+          targetGroundYRef.current,
+          GROUND_Y_SMOOTHING_PER_SECOND,
+          delta,
+        );
+      }
     }
   });
 
@@ -730,6 +910,8 @@ export function ArcadeScene({
 }: ArcadeSceneProps) {
   const [modelRadius, setModelRadius] = useState(6);
   const actorRef = useRef<THREE.Group>(null);
+  const terrainRootRef = useRef<THREE.Object3D | null>(null);
+  const terrainBoundsRef = useRef<TerrainBounds | null>(null);
 
   return (
     <Canvas
@@ -752,22 +934,21 @@ export function ArcadeScene({
       <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
 
       <Suspense fallback={<LoadingFallback />}>
+        <TerrainGround terrainRootRef={terrainRootRef} terrainBoundsRef={terrainBoundsRef} />
         <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
         <ArcadeRig
           actorRef={actorRef}
           moveRef={moveRef}
+          terrainRootRef={terrainRootRef}
+          terrainBoundsRef={terrainBoundsRef}
           resetToken={resetToken}
           animationCue={animationCue}
           onModelRadiusChange={setModelRadius}
         />
       </Suspense>
-
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <circleGeometry args={[220, 96]} />
-        <meshStandardMaterial color="#0d1325" />
-      </mesh>
     </Canvas>
   );
 }
 
 useGLTF.preload(GLB_PATH);
+useGLTF.preload(TERRAIN_GLB_PATH);
