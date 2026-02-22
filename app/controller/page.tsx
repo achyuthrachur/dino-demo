@@ -16,7 +16,8 @@ import {
 import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
-const KNOB_SIZE = 84;
+const KNOB_SIZE = 62;
+const STICK_SIZE = 'min(30svh, clamp(96px, 30vw, 150px))';
 
 function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
   if (status === 'connected') return '#7CF7C6';
@@ -225,17 +226,17 @@ export default function ControllerPage() {
         WebkitUserSelect: 'none',
         display: 'grid',
         gridTemplateRows: 'auto 1fr auto',
-        gap: '0.75rem',
-        padding: '1rem',
+        gap: '0.45rem',
+        padding: '0.6rem',
         background: 'radial-gradient(circle at 20% 20%, #18243d 0%, #07090d 60%)',
       }}
     >
       <header
         className="glass-panel"
         style={{
-          padding: '0.8rem',
+          padding: '0.52rem 0.62rem',
           display: 'grid',
-          gap: '0.45rem',
+          gap: '0.24rem',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -252,29 +253,23 @@ export default function ControllerPage() {
             {status.toUpperCase()}
           </span>
         </div>
-        <div style={{ fontSize: '0.8rem', color: 'var(--fg1)' }}>
+        <div style={{ fontSize: '0.74rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
           Session <strong style={{ color: 'var(--fg0)' }}>{session || '----'}</strong> | Client{' '}
           <code>{clientIdRef.current}</code>
         </div>
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
-          Transport <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code>
-        </div>
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
-          Bridge <code>{bridgeUrl || 'ws://<host>:8787'}</code>
-        </div>
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
+        <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
           Left stick: walk | Right stick: rotate 360
         </div>
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
+        <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
           Status {lastError ?? statusNote}
         </div>
         {!useAbly && (
-          <div style={{ fontSize: '0.76rem', color: '#F7D154' }}>
+          <div style={{ fontSize: '0.68rem', color: '#F7D154', lineHeight: 1.2 }}>
             Requires Mac bridge process: `npm run bridge`
           </div>
         )}
         {deployWarning && (
-          <div style={{ fontSize: '0.76rem', color: '#FFB0B0' }}>{deployWarning}</div>
+          <div style={{ fontSize: '0.68rem', color: '#FFB0B0', lineHeight: 1.2 }}>{deployWarning}</div>
         )}
       </header>
 
@@ -282,12 +277,13 @@ export default function ControllerPage() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: '0.75rem',
+          gap: '0.45rem',
           alignItems: 'center',
+          minHeight: 0,
         }}
       >
-        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.45rem' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move</div>
+        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move</div>
           <div
             ref={movePadRef}
             role="application"
@@ -315,8 +311,8 @@ export default function ControllerPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.45rem' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Rotate</div>
+        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Rotate</div>
           <div
             ref={aimPadRef}
             role="application"
@@ -349,7 +345,7 @@ export default function ControllerPage() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-          gap: '0.55rem',
+          gap: '0.42rem',
         }}
       >
         <button
@@ -395,8 +391,8 @@ export default function ControllerPage() {
 
 function stickPadStyle(borderColor: string, glowColor: string): CSSProperties {
   return {
-    width: 'min(42vw, 220px)',
-    height: 'min(42vw, 220px)',
+    width: STICK_SIZE,
+    height: STICK_SIZE,
     borderRadius: '50%',
     touchAction: 'none',
     position: 'relative',
@@ -425,9 +421,9 @@ function buttonStyle(color: string): CSSProperties {
     background: `${color}22`,
     color,
     borderRadius: 12,
-    minHeight: 52,
+    minHeight: 'clamp(36px, 5.2dvh, 46px)',
     fontWeight: 700,
-    fontSize: '0.86rem',
+    fontSize: '0.76rem',
     letterSpacing: '0.02em',
     touchAction: 'none',
   };
