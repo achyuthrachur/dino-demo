@@ -6,8 +6,6 @@ import QRCode from 'qrcode';
 import {
   ArcadeScene,
   type ArcadeAnimCueKind,
-  type RotationMode,
-  type WalkDirection,
 } from '@/app/_components/ArcadeScene';
 import { ARCADE_CONFIG, type JoyVector } from '@/app/_lib/arcade/config';
 import { isControllerAction, isControllerState, type WireMessage } from '@/app/_lib/arcade/protocol';
@@ -39,14 +37,12 @@ export default function ArcadePage() {
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [panelHidden, setPanelHidden] = useState(false);
-  const [walkEnabled, setWalkEnabled] = useState(false);
-  const [walkDirection, setWalkDirection] = useState<WalkDirection>('forward');
-  const [rotationMode, setRotationMode] = useState<RotationMode>('off');
   const [animationCue, setAnimationCue] = useState<{ kind: ArcadeAnimCueKind; nonce: number } | null>(
     null,
   );
 
-  const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const moveRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const aimRef = useRef<JoyVector>({ x: 0, y: 0 });
   const clientIdRef = useRef(createClientId('mac'));
   const cueNonceRef = useRef(1);
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
@@ -133,7 +129,8 @@ export default function ArcadePage() {
     if (message.session !== session) return;
 
     if (isControllerState(message)) {
-      joyRef.current = message.joy;
+      moveRef.current = message.move;
+      aimRef.current = message.aim;
       setActiveControllerId(message.clientId);
       setLastInputAt(message.t);
       return;
@@ -144,24 +141,6 @@ export default function ArcadePage() {
       setLastInputAt(message.t);
 
       switch (message.action) {
-        case 'walk_toggle':
-          setWalkEnabled((previous) => !previous);
-          break;
-        case 'walk_forward':
-          setWalkDirection('forward');
-          break;
-        case 'walk_reverse':
-          setWalkDirection('reverse');
-          break;
-        case 'rotate_left':
-          setRotationMode('left');
-          break;
-        case 'rotate_right':
-          setRotationMode('right');
-          break;
-        case 'rotate_off':
-          setRotationMode('off');
-          break;
         case 'anim_minion_spawn':
           triggerAnimation('minion_spawn');
           break;
@@ -177,17 +156,9 @@ export default function ArcadePage() {
         case 'anim_victory':
           triggerAnimation('victory');
           break;
-        case 'roar':
-          triggerAnimation('spawn');
-          break;
-        case 'mode_toggle':
-          triggerAnimation('next_round');
-          break;
         case 'reset_pose': {
-          joyRef.current = { x: 0, y: 0 };
-          setWalkEnabled(false);
-          setWalkDirection('forward');
-          setRotationMode('off');
+          moveRef.current = { x: 0, y: 0 };
+          aimRef.current = { x: 0, y: 0 };
           setAnimationCue(null);
           setResetToken((prev) => prev + 1);
           break;
@@ -264,11 +235,9 @@ export default function ArcadePage() {
   return (
     <main style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
       <ArcadeScene
-        joyRef={joyRef}
+        moveRef={moveRef}
+        aimRef={aimRef}
         resetToken={resetToken}
-        walkEnabled={walkEnabled}
-        walkDirection={walkDirection}
-        rotationMode={rotationMode}
         animationCue={animationCue}
       />
 
@@ -306,9 +275,7 @@ export default function ArcadePage() {
             <div>Transport: <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code></div>
             <div>Bridge: <code>{bridgeUrl || 'ws://<host>:8787'}</code></div>
             <div>Controller: <code style={{ wordBreak: 'break-all' }}>{controllerUrl || '(loading...)'}</code></div>
-            <div>Walk: <strong style={{ color: walkEnabled ? '#7CF7C6' : 'var(--fg0)' }}>{walkEnabled ? 'ON' : 'OFF'}</strong></div>
-            <div>Direction: <strong style={{ color: 'var(--fg0)' }}>{walkDirection}</strong></div>
-            <div>Rotation: <strong style={{ color: 'var(--fg0)' }}>{rotationMode}</strong></div>
+            <div>Controls: <strong style={{ color: 'var(--fg0)' }}>Left stick walk + right stick rotate</strong></div>
             <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
             <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
             <div>Status: <span>{lastError ?? statusNote}</span></div>
@@ -355,10 +322,9 @@ export default function ArcadePage() {
             </button>
             <button
               onClick={() => {
-                joyRef.current = { x: 0, y: 0 };
-                setWalkEnabled(false);
-                setWalkDirection('forward');
-                setRotationMode('off');
+                moveRef.current = { x: 0, y: 0 };
+                aimRef.current = { x: 0, y: 0 };
+                setAnimationCue(null);
                 setResetToken((prev) => prev + 1);
               }}
               style={{

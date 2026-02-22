@@ -31,7 +31,8 @@ export type ControllerState = {
   clientId: string;
   t: number;
   seq: number;
-  joy: JoyVector;
+  move: JoyVector;
+  aim: JoyVector;
 };
 
 export type ControllerAction = {
@@ -168,14 +169,22 @@ export function safeParseWireMessage(raw: string): WireMessage | null {
     }
     case 'controller_state': {
       if (!isString(parsed.clientId) || !isFiniteNumber(parsed.t) || !isFiniteNumber(parsed.seq)) return null;
-      if (!isJoyVector(parsed.joy)) return null;
+      const move =
+        isJoyVector(parsed.move)
+          ? clampJoy(parsed.move)
+          : isJoyVector(parsed.joy)
+            ? clampJoy(parsed.joy)
+            : null;
+      const aim = isJoyVector(parsed.aim) ? clampJoy(parsed.aim) : { x: 0, y: 0 };
+      if (!move) return null;
       return {
         type: 'controller_state',
         session,
         clientId: parsed.clientId,
         t: parsed.t,
         seq: parsed.seq,
-        joy: clampJoy(parsed.joy),
+        move,
+        aim,
       };
     }
     case 'action': {

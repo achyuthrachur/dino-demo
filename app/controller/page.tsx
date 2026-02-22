@@ -16,9 +16,7 @@ import {
 import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
-const KNOB_SIZE = 94;
-type WalkDirection = 'forward' | 'reverse';
-type RotateMode = 'off' | 'left' | 'right';
+const KNOB_SIZE = 84;
 
 function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
   if (status === 'connected') return '#7CF7C6';
@@ -31,16 +29,17 @@ export default function ControllerPage() {
   const [bridgeUrl, setBridgeUrl] = useState('');
   const [statusNote, setStatusNote] = useState('Waiting for bridge...');
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
-  const [joyUi, setJoyUi] = useState<JoyVector>({ x: 0, y: 0 });
-  const [walkEnabled, setWalkEnabled] = useState(false);
-  const [walkDirection, setWalkDirection] = useState<WalkDirection>('forward');
-  const [rotateMode, setRotateMode] = useState<RotateMode>('off');
+  const [moveUi, setMoveUi] = useState<JoyVector>({ x: 0, y: 0 });
+  const [aimUi, setAimUi] = useState<JoyVector>({ x: 0, y: 0 });
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
   const useAbly = Boolean(ablyKey);
 
-  const padRef = useRef<HTMLDivElement>(null);
-  const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
-  const draggingRef = useRef(false);
+  const movePadRef = useRef<HTMLDivElement>(null);
+  const aimPadRef = useRef<HTMLDivElement>(null);
+  const moveRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const aimRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const moveDraggingRef = useRef(false);
+  const aimDraggingRef = useRef(false);
   const clientIdRef = useRef(createClientId('phone'));
   const seqRef = useRef(1);
 
@@ -122,7 +121,8 @@ export default function ControllerPage() {
         clientId: clientIdRef.current,
         t: Date.now(),
         seq: seqRef.current++,
-        joy: joyRef.current,
+        move: moveRef.current,
+        aim: aimRef.current,
       });
     }, ARCADE_CONFIG.joystickIntervalMs);
 
@@ -131,9 +131,8 @@ export default function ControllerPage() {
     };
   }, [send, session, status]);
 
-  const updateJoyFromPointer = useCallback((clientX: number, clientY: number) => {
-    const pad = padRef.current;
-    if (!pad) return;
+  const vectorFromPadPointer = useCallback((pad: HTMLDivElement | null, clientX: number, clientY: number) => {
+    if (!pad) return null;
     const rect = pad.getBoundingClientRect();
     const radius = rect.width / 2;
     const centerX = rect.left + radius;
@@ -148,17 +147,36 @@ export default function ControllerPage() {
     const localX = Math.cos(angle) * clampedDistance;
     const localY = Math.sin(angle) * clampedDistance;
 
-    const normX = clamp(localX / radius, -1, 1);
-    const normY = clamp((-localY) / radius, -1, 1);
-
-    joyRef.current = { x: normX, y: normY };
-    setJoyUi({ x: normX, y: normY });
+    return {
+      x: clamp(localX / radius, -1, 1),
+      y: clamp((-localY) / radius, -1, 1),
+    } as JoyVector;
   }, []);
 
-  const releaseJoystick = useCallback(() => {
-    draggingRef.current = false;
-    joyRef.current = { x: 0, y: 0 };
-    setJoyUi({ x: 0, y: 0 });
+  const updateMoveFromPointer = useCallback((clientX: number, clientY: number) => {
+    const vector = vectorFromPadPointer(movePadRef.current, clientX, clientY);
+    if (!vector) return;
+    moveRef.current = vector;
+    setMoveUi(vector);
+  }, [vectorFromPadPointer]);
+
+  const updateAimFromPointer = useCallback((clientX: number, clientY: number) => {
+    const vector = vectorFromPadPointer(aimPadRef.current, clientX, clientY);
+    if (!vector) return;
+    aimRef.current = vector;
+    setAimUi(vector);
+  }, [vectorFromPadPointer]);
+
+  const releaseMoveStick = useCallback(() => {
+    moveDraggingRef.current = false;
+    moveRef.current = { x: 0, y: 0 };
+    setMoveUi({ x: 0, y: 0 });
+  }, []);
+
+  const releaseAimStick = useCallback(() => {
+    aimDraggingRef.current = false;
+    aimRef.current = { x: 0, y: 0 };
+    setAimUi({ x: 0, y: 0 });
   }, []);
 
   const handleAction = useCallback((action: ArcadeAction): boolean => {
@@ -173,40 +191,28 @@ export default function ControllerPage() {
     });
   }, [send, session, status]);
 
-  const handleWalkToggle = useCallback(() => {
-    const sent = handleAction('walk_toggle');
-    if (!sent) return;
-    setWalkEnabled((previous) => !previous);
-  }, [handleAction]);
-
-  const handleWalkDirection = useCallback((direction: WalkDirection) => {
-    const sent = handleAction(direction === 'forward' ? 'walk_forward' : 'walk_reverse');
-    if (!sent) return;
-    setWalkDirection(direction);
-  }, [handleAction]);
-
-  const handleRotationMode = useCallback((mode: RotateMode) => {
-    const sent = handleAction(mode === 'left' ? 'rotate_left' : mode === 'right' ? 'rotate_right' : 'rotate_off');
-    if (!sent) return;
-    setRotateMode(mode);
-  }, [handleAction]);
-
   const handleReset = useCallback(() => {
     const sent = handleAction('reset_pose');
     if (!sent) return;
-    setWalkEnabled(false);
-    setWalkDirection('forward');
-    setRotateMode('off');
-    releaseJoystick();
-  }, [handleAction, releaseJoystick]);
+    releaseMoveStick();
+    releaseAimStick();
+  }, [handleAction, releaseAimStick, releaseMoveStick]);
 
-  const knobTranslate = useMemo(() => {
-    const maxOffset = 88;
+  const moveKnobTranslate = useMemo(() => {
+    const maxOffset = 82;
     return {
-      x: joyUi.x * maxOffset,
-      y: -joyUi.y * maxOffset,
+      x: moveUi.x * maxOffset,
+      y: -moveUi.y * maxOffset,
     };
-  }, [joyUi.x, joyUi.y]);
+  }, [moveUi.x, moveUi.y]);
+
+  const aimKnobTranslate = useMemo(() => {
+    const maxOffset = 82;
+    return {
+      x: aimUi.x * maxOffset,
+      y: -aimUi.y * maxOffset,
+    };
+  }, [aimUi.x, aimUi.y]);
 
   return (
     <main
@@ -218,7 +224,7 @@ export default function ControllerPage() {
         userSelect: 'none',
         WebkitUserSelect: 'none',
         display: 'grid',
-        gridTemplateRows: 'auto auto 1fr auto',
+        gridTemplateRows: 'auto 1fr auto',
         gap: '0.75rem',
         padding: '1rem',
         background: 'radial-gradient(circle at 20% 20%, #18243d 0%, #07090d 60%)',
@@ -257,6 +263,9 @@ export default function ControllerPage() {
           Bridge <code>{bridgeUrl || 'ws://<host>:8787'}</code>
         </div>
         <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
+          Left stick: walk | Right stick: rotate 360
+        </div>
+        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)' }}>
           Status {lastError ?? statusNote}
         </div>
         {!useAbly && (
@@ -270,103 +279,69 @@ export default function ControllerPage() {
       </header>
 
       <section
-        className="glass-panel"
-        style={{
-          padding: '0.75rem',
-          display: 'grid',
-          gap: '0.5rem',
-        }}
-      >
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>
-          Walk Direction
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' }}>
-          <button
-            onClick={() => handleWalkDirection('forward')}
-            style={buttonStyle('#6FEFC4', walkDirection === 'forward')}
-          >
-            Forward
-          </button>
-          <button
-            onClick={() => handleWalkDirection('reverse')}
-            style={buttonStyle('#6FEFC4', walkDirection === 'reverse')}
-          >
-            Reverse
-          </button>
-        </div>
-
-        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>
-          Rotation
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' }}>
-          <button
-            onClick={() => handleRotationMode('off')}
-            style={buttonStyle('#8BB7FF', rotateMode === 'off')}
-          >
-            Off
-          </button>
-          <button
-            onClick={() => handleRotationMode('left')}
-            style={buttonStyle('#8BB7FF', rotateMode === 'left')}
-          >
-            Left
-          </button>
-          <button
-            onClick={() => handleRotationMode('right')}
-            style={buttonStyle('#8BB7FF', rotateMode === 'right')}
-          >
-            Right
-          </button>
-        </div>
-      </section>
-
-      <section
         style={{
           display: 'grid',
-          placeItems: 'center',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: '0.75rem',
+          alignItems: 'center',
         }}
       >
-        <div
-          ref={padRef}
-          role="application"
-          aria-label="Joystick"
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            draggingRef.current = true;
-            updateJoyFromPointer(event.clientX, event.clientY);
-          }}
-          onPointerMove={(event) => {
-            if (!draggingRef.current) return;
-            updateJoyFromPointer(event.clientX, event.clientY);
-          }}
-          onPointerUp={() => releaseJoystick()}
-          onPointerCancel={() => releaseJoystick()}
-          style={{
-            width: 'min(72vw, 320px)',
-            height: 'min(72vw, 320px)',
-            borderRadius: '50%',
-            touchAction: 'none',
-            position: 'relative',
-            background:
-              'radial-gradient(circle at 35% 30%, rgba(124,247,198,0.26), rgba(124,247,198,0.03) 60%, rgba(255,255,255,0.02) 100%)',
-            border: '1px solid rgba(124,247,198,0.32)',
-            boxShadow: 'inset 0 0 24px rgba(124,247,198,0.2), 0 8px 30px rgba(0,0,0,0.35)',
-          }}
-        >
+        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.45rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move</div>
           <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              transform: `translate(calc(-50% + ${knobTranslate.x}px), calc(-50% + ${knobTranslate.y}px))`,
-              width: `${KNOB_SIZE}px`,
-              height: `${KNOB_SIZE}px`,
-              borderRadius: '50%',
-              background: 'linear-gradient(180deg, #8DFFD5 0%, #57D9A7 100%)',
-              border: '2px solid rgba(8, 20, 18, 0.45)',
-              boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+            ref={movePadRef}
+            role="application"
+            aria-label="Move joystick"
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              moveDraggingRef.current = true;
+              updateMoveFromPointer(event.clientX, event.clientY);
             }}
-          />
+            onPointerMove={(event) => {
+              if (!moveDraggingRef.current) return;
+              updateMoveFromPointer(event.clientX, event.clientY);
+            }}
+            onPointerUp={() => releaseMoveStick()}
+            onPointerCancel={() => releaseMoveStick()}
+            style={stickPadStyle('rgba(124,247,198,0.30)', 'rgba(124,247,198,0.24)')}
+          >
+            <div
+              style={{
+                ...stickKnobStyle,
+                transform: `translate(calc(-50% + ${moveKnobTranslate.x}px), calc(-50% + ${moveKnobTranslate.y}px))`,
+                background: 'linear-gradient(180deg, #8DFFD5 0%, #57D9A7 100%)',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', justifyItems: 'center', gap: '0.45rem' }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Rotate</div>
+          <div
+            ref={aimPadRef}
+            role="application"
+            aria-label="Rotate joystick"
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              aimDraggingRef.current = true;
+              updateAimFromPointer(event.clientX, event.clientY);
+            }}
+            onPointerMove={(event) => {
+              if (!aimDraggingRef.current) return;
+              updateAimFromPointer(event.clientX, event.clientY);
+            }}
+            onPointerUp={() => releaseAimStick()}
+            onPointerCancel={() => releaseAimStick()}
+            style={stickPadStyle('rgba(139,183,255,0.34)', 'rgba(139,183,255,0.22)')}
+          >
+            <div
+              style={{
+                ...stickKnobStyle,
+                transform: `translate(calc(-50% + ${aimKnobTranslate.x}px), calc(-50% + ${aimKnobTranslate.y}px))`,
+                background: 'linear-gradient(180deg, #B8D2FF 0%, #7EA9F8 100%)',
+              }}
+            />
+          </div>
         </div>
       </section>
 
@@ -377,12 +352,6 @@ export default function ControllerPage() {
           gap: '0.55rem',
         }}
       >
-        <button
-          onClick={handleWalkToggle}
-          style={buttonStyle('#6FEFC4', walkEnabled)}
-        >
-          {walkEnabled ? 'Walk On' : 'Walk Off'}
-        </button>
         <button
           onClick={() => handleAction('anim_minion_spawn')}
           style={buttonStyle('#FFD166')}
@@ -424,11 +393,36 @@ export default function ControllerPage() {
   );
 }
 
-function buttonStyle(color: string, active = false): CSSProperties {
+function stickPadStyle(borderColor: string, glowColor: string): CSSProperties {
+  return {
+    width: 'min(42vw, 220px)',
+    height: 'min(42vw, 220px)',
+    borderRadius: '50%',
+    touchAction: 'none',
+    position: 'relative',
+    background:
+      `radial-gradient(circle at 35% 30%, ${glowColor}, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.02) 100%)`,
+    border: `1px solid ${borderColor}`,
+    boxShadow: 'inset 0 0 22px rgba(255,255,255,0.08), 0 8px 30px rgba(0,0,0,0.35)',
+  };
+}
+
+const stickKnobStyle: CSSProperties = {
+  position: 'absolute',
+  left: '50%',
+  top: '50%',
+  width: `${KNOB_SIZE}px`,
+  height: `${KNOB_SIZE}px`,
+  borderRadius: '50%',
+  border: '2px solid rgba(8, 20, 18, 0.45)',
+  boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+};
+
+function buttonStyle(color: string): CSSProperties {
   return {
     appearance: 'none',
     border: `1px solid ${color}66`,
-    background: active ? `${color}40` : `${color}22`,
+    background: `${color}22`,
     color,
     borderRadius: 12,
     minHeight: 52,
@@ -436,6 +430,5 @@ function buttonStyle(color: string, active = false): CSSProperties {
     fontSize: '0.86rem',
     letterSpacing: '0.02em',
     touchAction: 'none',
-    boxShadow: active ? `0 0 0 1px ${color}55 inset` : 'none',
   };
 }

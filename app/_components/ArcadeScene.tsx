@@ -4,16 +4,13 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Mutab
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { type JoyVector } from '../_lib/arcade/config';
+import { ARCADE_CONFIG, type JoyVector } from '../_lib/arcade/config';
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const FADE_SECONDS = 0.2;
 const WALK_METERS_PER_SECOND = 3.2;
-const TURN_RADIANS_PER_SECOND = 1.25;
 const ARENA_RADIUS = 18;
 
-export type WalkDirection = 'forward' | 'reverse';
-export type RotationMode = 'off' | 'left' | 'right';
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
 export interface ArcadeAnimCue {
@@ -22,21 +19,17 @@ export interface ArcadeAnimCue {
 }
 
 interface ArcadeRigProps {
-  joyRef: MutableRefObject<JoyVector>;
+  moveRef: MutableRefObject<JoyVector>;
+  aimRef: MutableRefObject<JoyVector>;
   resetToken: number;
-  walkEnabled: boolean;
-  walkDirection: WalkDirection;
-  rotationMode: RotationMode;
   animationCue: ArcadeAnimCue | null;
   onModelRadiusChange: (radius: number) => void;
 }
 
 interface ArcadeSceneProps {
-  joyRef: MutableRefObject<JoyVector>;
+  moveRef: MutableRefObject<JoyVector>;
+  aimRef: MutableRefObject<JoyVector>;
   resetToken: number;
-  walkEnabled: boolean;
-  walkDirection: WalkDirection;
-  rotationMode: RotationMode;
   animationCue: ArcadeAnimCue | null;
 }
 
@@ -124,13 +117,13 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
 }
 
 interface RexyArcadeModelProps {
-  walkEnabled: boolean;
+  walkLoopEnabled: boolean;
   animationCue: ArcadeAnimCue | null;
   resetToken: number;
   onBoundsRadiusChange?: (radius: number) => void;
 }
 
-function RexyArcadeModel({ walkEnabled, animationCue, resetToken, onBoundsRadiusChange }: RexyArcadeModelProps) {
+function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRadiusChange }: RexyArcadeModelProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(GLB_PATH);
   const { actions } = useAnimations(animations, groupRef);
@@ -146,12 +139,12 @@ function RexyArcadeModel({ walkEnabled, animationCue, resetToken, onBoundsRadius
   const sequenceTimersRef = useRef<number[]>([]);
   const sequenceTokenRef = useRef(0);
   const sequenceActiveRef = useRef(false);
-  const walkEnabledRef = useRef(walkEnabled);
+  const walkLoopEnabledRef = useRef(walkLoopEnabled);
   const clipSetRef = useRef(clipSet);
 
   useEffect(() => {
-    walkEnabledRef.current = walkEnabled;
-  }, [walkEnabled]);
+    walkLoopEnabledRef.current = walkLoopEnabled;
+  }, [walkLoopEnabled]);
 
   useEffect(() => {
     clipSetRef.current = clipSet;
@@ -225,7 +218,7 @@ function RexyArcadeModel({ walkEnabled, animationCue, resetToken, onBoundsRadius
     if (sequenceActiveRef.current) return;
     const activeClipSet = clipSetRef.current;
 
-    if (walkEnabledRef.current) {
+    if (walkLoopEnabledRef.current) {
       playClip(activeClipSet.walk, true);
       return;
     }
@@ -274,7 +267,7 @@ function RexyArcadeModel({ walkEnabled, animationCue, resetToken, onBoundsRadius
 
   useEffect(() => {
     syncBaseline();
-  }, [clipSet, syncBaseline, walkEnabled]);
+  }, [clipSet, syncBaseline, walkLoopEnabled]);
 
   useEffect(() => {
     if (!animationCue) return;
@@ -348,22 +341,28 @@ function RexyArcadeModel({ walkEnabled, animationCue, resetToken, onBoundsRadius
 }
 
 function ArcadeRig({
-  joyRef,
+  moveRef,
+  aimRef,
   resetToken,
-  walkEnabled,
-  walkDirection,
-  rotationMode,
   animationCue,
   onModelRadiusChange,
 }: ArcadeRigProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const headingRef = useRef(0);
+  const [walkLoopEnabled, setWalkLoopEnabled] = useState(false);
+  const walkLoopEnabledRef = useRef(false);
+  const targetYawRef = useRef(0);
   const bodyYawRef = useRef(0);
-  const walkVectorRef = useRef(new THREE.Vector3());
+  const moveDirectionRef = useRef(new THREE.Vector3());
+  const targetVelocityRef = useRef(new THREE.Vector3());
+  const velocityRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
-    headingRef.current = 0;
+    walkLoopEnabledRef.current = false;
+    setWalkLoopEnabled(false);
+    targetYawRef.current = 0;
     bodyYawRef.current = 0;
+    targetVelocityRef.current.set(0, 0, 0);
+    velocityRef.current.set(0, 0, 0);
     if (groupRef.current) {
       groupRef.current.position.set(0, 0, 0);
       groupRef.current.rotation.set(0, 0, 0);
@@ -374,19 +373,37 @@ function ArcadeRig({
     const group = groupRef.current;
     if (!group) return;
 
-    const rotationDirection = rotationMode === 'left' ? 1 : rotationMode === 'right' ? -1 : 0;
-    headingRef.current += rotationDirection * TURN_RADIANS_PER_SECOND * delta;
-    const directionOffset = walkDirection === 'reverse' ? Math.PI : 0;
-    const targetYaw = headingRef.current + directionOffset;
-    bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, targetYaw, 8, delta);
+    const move = moveRef.current;
+    const aim = aimRef.current;
+    const aimMagnitude = Math.hypot(aim.x, aim.y);
+    if (aimMagnitude > ARCADE_CONFIG.deadzone) {
+      targetYawRef.current = Math.atan2(aim.x, -aim.y);
+    }
+
+    bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, targetYawRef.current, 8, delta);
     group.rotation.y = bodyYawRef.current;
 
-    if (!walkEnabled) return;
+    const rawMoveMagnitude = Math.hypot(move.x, move.y);
+    const moveMagnitude =
+      rawMoveMagnitude <= ARCADE_CONFIG.deadzone
+        ? 0
+        : (rawMoveMagnitude - ARCADE_CONFIG.deadzone) / (1 - ARCADE_CONFIG.deadzone);
+    const shouldWalkLoop = moveMagnitude > 0.001;
+    if (shouldWalkLoop !== walkLoopEnabledRef.current) {
+      walkLoopEnabledRef.current = shouldWalkLoop;
+      setWalkLoopEnabled(shouldWalkLoop);
+    }
 
-    const throttle = THREE.MathUtils.clamp(Math.abs(joyRef.current.y), 0, 1);
-    const walkSpeed = WALK_METERS_PER_SECOND * (0.55 + throttle * 0.75);
-    walkVectorRef.current.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
-    group.position.addScaledVector(walkVectorRef.current, walkSpeed * delta);
+    if (moveMagnitude > 0.001) {
+      const safeLength = Math.max(0.0001, rawMoveMagnitude);
+      moveDirectionRef.current.set(move.x / safeLength, 0, -move.y / safeLength);
+      targetVelocityRef.current.copy(moveDirectionRef.current).multiplyScalar(WALK_METERS_PER_SECOND * moveMagnitude);
+    } else {
+      targetVelocityRef.current.set(0, 0, 0);
+    }
+    const alpha = 1 - Math.exp(-ARCADE_CONFIG.smoothingPerSecond * delta);
+    velocityRef.current.lerp(targetVelocityRef.current, alpha);
+    group.position.addScaledVector(velocityRef.current, delta);
 
     const radius = group.position.length();
     if (radius > ARENA_RADIUS) {
@@ -397,7 +414,7 @@ function ArcadeRig({
   return (
     <group ref={groupRef}>
       <RexyArcadeModel
-        walkEnabled={walkEnabled}
+        walkLoopEnabled={walkLoopEnabled}
         animationCue={animationCue}
         resetToken={resetToken}
         onBoundsRadiusChange={onModelRadiusChange}
@@ -423,11 +440,9 @@ function AutoFitArcadeCamera({ radius }: { radius: number }) {
 }
 
 export function ArcadeScene({
-  joyRef,
+  moveRef,
+  aimRef,
   resetToken,
-  walkEnabled,
-  walkDirection,
-  rotationMode,
   animationCue,
 }: ArcadeSceneProps) {
   const [modelRadius, setModelRadius] = useState(6);
@@ -455,11 +470,9 @@ export function ArcadeScene({
       <Suspense fallback={<LoadingFallback />}>
         <AutoFitArcadeCamera radius={modelRadius} />
         <ArcadeRig
-          joyRef={joyRef}
+          moveRef={moveRef}
+          aimRef={aimRef}
           resetToken={resetToken}
-          walkEnabled={walkEnabled}
-          walkDirection={walkDirection}
-          rotationMode={rotationMode}
           animationCue={animationCue}
           onModelRadiusChange={setModelRadius}
         />
