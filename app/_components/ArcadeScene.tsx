@@ -42,7 +42,7 @@ const CAMERA_STICK_DEADZONE = 0.005;
 const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(8);
 const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(6);
 const LOCOMOTION_MIN_TIME_SCALE = 1.0;
-const LOCOMOTION_MAX_TIME_SCALE = 1.15;
+const LOCOMOTION_MAX_TIME_SCALE = 1.0;
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -454,6 +454,17 @@ function prepareAnimationsForArcade(
   animations: THREE.AnimationClip[],
   restPositionsByNodeName: Map<string, THREE.Vector3>,
 ): THREE.AnimationClip[] {
+  // If the GLB already ships a dedicated walk-loop clip, do NOT generate a
+  // synthetic subclip from the spawn animation. The synthetic clip's normalised
+  // name is identical to the real clip's name ("raidspawnwalkloop"), so it
+  // would shadow the real clip in buildClipSet — producing a non-seamless,
+  // visually broken 30-70% subclip of the spawn animation instead of the
+  // designer-authored looping walk cycle.
+  const hasDedicatedWalkLoop = animations.some((clip) => {
+    const n = normalizeClipName(clip.name);
+    return n.includes('raidspawn') && !n.includes('minion') && !n.includes('player') && n.includes('walkloop');
+  });
+
   const prepared: THREE.AnimationClip[] = [];
   for (const clip of animations) {
     const normalized = normalizeClipName(clip.name);
@@ -480,9 +491,11 @@ function prepareAnimationsForArcade(
 
     prepared.push(cloned);
 
+    // Only generate a synthetic walk loop as a fallback when the GLB has no
+    // dedicated walk-loop animation.
     const isPrimarySpawnClip =
       normalized.includes('raidspawn') && !normalized.includes('minion') && !normalized.includes('player');
-    if (isPrimarySpawnClip) {
+    if (isPrimarySpawnClip && !hasDedicatedWalkLoop) {
       const walkLoopClip = createSpawnWalkLoopClip(cloned);
       if (walkLoopClip) {
         prepared.push(walkLoopClip);
