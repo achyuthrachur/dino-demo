@@ -258,7 +258,7 @@ export default function ControllerPage() {
           <code>{clientIdRef.current}</code>
         </div>
         <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
-          Left stick: walk | Right stick: rotate 360
+          Left stick: tank walk | Right stick: camera pan
         </div>
         <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
           Status {lastError ?? statusNote}
@@ -283,7 +283,7 @@ export default function ControllerPage() {
         }}
       >
         <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move (Tank)</div>
           <div
             ref={movePadRef}
             role="application"
@@ -312,7 +312,7 @@ export default function ControllerPage() {
         </div>
 
         <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Rotate</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Camera</div>
           <div
             ref={aimPadRef}
             role="application"

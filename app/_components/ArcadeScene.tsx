@@ -4,12 +4,21 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Mutab
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { ARCADE_CONFIG, type JoyVector } from '../_lib/arcade/config';
+import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/config';
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const FADE_SECONDS = 0.2;
 const WALK_METERS_PER_SECOND = 3.2;
+const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
+const CAMERA_YAW_RADIANS_PER_SECOND = 1.9;
+const CAMERA_PITCH_RADIANS_PER_SECOND = 1.4;
+const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
+const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(28);
+const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
+const CAMERA_DISTANCE_MULTIPLIER = 2.45;
+const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
+const CAMERA_POSITION_SMOOTHING_PER_SECOND = 8;
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -19,8 +28,8 @@ export interface ArcadeAnimCue {
 }
 
 interface ArcadeRigProps {
+  actorRef: MutableRefObject<THREE.Group | null>;
   moveRef: MutableRefObject<JoyVector>;
-  aimRef: MutableRefObject<JoyVector>;
   resetToken: number;
   animationCue: ArcadeAnimCue | null;
   onModelRadiusChange: (radius: number) => void;
@@ -341,63 +350,53 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
 }
 
 function ArcadeRig({
+  actorRef,
   moveRef,
-  aimRef,
   resetToken,
   animationCue,
   onModelRadiusChange,
 }: ArcadeRigProps) {
-  const groupRef = useRef<THREE.Group>(null);
   const [walkLoopEnabled, setWalkLoopEnabled] = useState(false);
   const walkLoopEnabledRef = useRef(false);
-  const targetYawRef = useRef(0);
+  const headingYawRef = useRef(0);
   const bodyYawRef = useRef(0);
-  const moveDirectionRef = useRef(new THREE.Vector3());
+  const forwardDirectionRef = useRef(new THREE.Vector3());
   const targetVelocityRef = useRef(new THREE.Vector3());
   const velocityRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
     walkLoopEnabledRef.current = false;
     setWalkLoopEnabled(false);
-    targetYawRef.current = 0;
+    headingYawRef.current = 0;
     bodyYawRef.current = 0;
     targetVelocityRef.current.set(0, 0, 0);
     velocityRef.current.set(0, 0, 0);
-    if (groupRef.current) {
-      groupRef.current.position.set(0, 0, 0);
-      groupRef.current.rotation.set(0, 0, 0);
+    if (actorRef.current) {
+      actorRef.current.position.set(0, 0, 0);
+      actorRef.current.rotation.set(0, 0, 0);
     }
-  }, [resetToken]);
+  }, [actorRef, resetToken]);
 
   useFrame((_, delta) => {
-    const group = groupRef.current;
+    const group = actorRef.current;
     if (!group) return;
 
     const move = moveRef.current;
-    const aim = aimRef.current;
-    const aimMagnitude = Math.hypot(aim.x, aim.y);
-    if (aimMagnitude > ARCADE_CONFIG.deadzone) {
-      targetYawRef.current = Math.atan2(aim.x, -aim.y);
-    }
-
-    bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, targetYawRef.current, 8, delta);
+    const turnInput = applyDeadzone(move.x, ARCADE_CONFIG.deadzone);
+    const throttleInput = applyDeadzone(move.y, ARCADE_CONFIG.deadzone);
+    headingYawRef.current += turnInput * TURN_RADIANS_PER_SECOND * delta;
+    bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, headingYawRef.current, 9, delta);
     group.rotation.y = bodyYawRef.current;
 
-    const rawMoveMagnitude = Math.hypot(move.x, move.y);
-    const moveMagnitude =
-      rawMoveMagnitude <= ARCADE_CONFIG.deadzone
-        ? 0
-        : (rawMoveMagnitude - ARCADE_CONFIG.deadzone) / (1 - ARCADE_CONFIG.deadzone);
-    const shouldWalkLoop = moveMagnitude > 0.001;
+    const shouldWalkLoop = Math.abs(throttleInput) > 0.001;
     if (shouldWalkLoop !== walkLoopEnabledRef.current) {
       walkLoopEnabledRef.current = shouldWalkLoop;
       setWalkLoopEnabled(shouldWalkLoop);
     }
 
-    if (moveMagnitude > 0.001) {
-      const safeLength = Math.max(0.0001, rawMoveMagnitude);
-      moveDirectionRef.current.set(move.x / safeLength, 0, -move.y / safeLength);
-      targetVelocityRef.current.copy(moveDirectionRef.current).multiplyScalar(WALK_METERS_PER_SECOND * moveMagnitude);
+    if (Math.abs(throttleInput) > 0.001) {
+      forwardDirectionRef.current.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
+      targetVelocityRef.current.copy(forwardDirectionRef.current).multiplyScalar(throttleInput * WALK_METERS_PER_SECOND);
     } else {
       targetVelocityRef.current.set(0, 0, 0);
     }
@@ -412,7 +411,7 @@ function ArcadeRig({
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={actorRef}>
       <RexyArcadeModel
         walkLoopEnabled={walkLoopEnabled}
         animationCue={animationCue}
@@ -423,18 +422,71 @@ function ArcadeRig({
   );
 }
 
-function AutoFitArcadeCamera({ radius }: { radius: number }) {
+interface ArcadeFollowCameraProps {
+  actorRef: MutableRefObject<THREE.Group | null>;
+  aimRef: MutableRefObject<JoyVector>;
+  radius: number;
+  resetToken: number;
+}
+
+function ArcadeFollowCamera({ actorRef, aimRef, radius, resetToken }: ArcadeFollowCameraProps) {
   const { camera } = useThree();
+  const yawRef = useRef(0);
+  const pitchRef = useRef(CAMERA_DEFAULT_PITCH_RADIANS);
+  const smoothedTargetRef = useRef(new THREE.Vector3());
+  const orbitOffsetRef = useRef(new THREE.Vector3());
+  const desiredPositionRef = useRef(new THREE.Vector3());
+  const lookAtRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
-    const safeRadius = Math.max(0.1, Math.min(radius, 350));
-    const distance = Math.max(10, Math.min(safeRadius * 2.35, 120));
-    camera.position.set(0, safeRadius * 0.5, distance);
+    yawRef.current = 0;
+    pitchRef.current = CAMERA_DEFAULT_PITCH_RADIANS;
+    smoothedTargetRef.current.set(0, 0, 0);
+    const safeRadius = Math.max(0.1, Math.min(radius, 120));
+    const distance = Math.max(10, Math.min(safeRadius * CAMERA_DISTANCE_MULTIPLIER, 36));
+    const horizontalDistance = distance * Math.cos(pitchRef.current);
+    const verticalDistance = distance * Math.sin(pitchRef.current);
+    camera.position.set(0, verticalDistance, horizontalDistance);
     camera.near = Math.max(0.01, distance / 4500);
-    camera.far = Math.max(2500, distance * 24);
-    camera.lookAt(0, safeRadius * 0.2, 0);
+    camera.far = Math.max(2500, distance * 30);
+    camera.lookAt(0, safeRadius * 0.12, 0);
     camera.updateProjectionMatrix();
-  }, [camera, radius]);
+  }, [camera, radius, resetToken]);
+
+  useFrame((_, delta) => {
+    const cameraInputX = applyDeadzone(aimRef.current.x, ARCADE_CONFIG.deadzone);
+    const cameraInputY = applyDeadzone(aimRef.current.y, ARCADE_CONFIG.deadzone);
+    yawRef.current += cameraInputX * CAMERA_YAW_RADIANS_PER_SECOND * delta;
+    pitchRef.current = THREE.MathUtils.clamp(
+      pitchRef.current + cameraInputY * CAMERA_PITCH_RADIANS_PER_SECOND * delta,
+      CAMERA_MIN_PITCH_RADIANS,
+      CAMERA_MAX_PITCH_RADIANS,
+    );
+
+    const actorPosition = actorRef.current?.position;
+    if (actorPosition) {
+      const followAlpha = 1 - Math.exp(-CAMERA_TARGET_SMOOTHING_PER_SECOND * delta);
+      smoothedTargetRef.current.lerp(actorPosition, followAlpha);
+    }
+
+    const safeRadius = Math.max(0.1, Math.min(radius, 120));
+    const distance = Math.max(10, Math.min(safeRadius * CAMERA_DISTANCE_MULTIPLIER, 36));
+    const horizontalDistance = distance * Math.cos(pitchRef.current);
+    const verticalDistance = distance * Math.sin(pitchRef.current);
+
+    orbitOffsetRef.current.set(
+      Math.sin(yawRef.current) * horizontalDistance,
+      verticalDistance,
+      Math.cos(yawRef.current) * horizontalDistance,
+    );
+    desiredPositionRef.current.copy(smoothedTargetRef.current).add(orbitOffsetRef.current);
+    const positionAlpha = 1 - Math.exp(-CAMERA_POSITION_SMOOTHING_PER_SECOND * delta);
+    camera.position.lerp(desiredPositionRef.current, positionAlpha);
+
+    lookAtRef.current.copy(smoothedTargetRef.current);
+    lookAtRef.current.y += safeRadius * 0.12;
+    camera.lookAt(lookAtRef.current);
+  });
 
   return null;
 }
@@ -446,10 +498,11 @@ export function ArcadeScene({
   animationCue,
 }: ArcadeSceneProps) {
   const [modelRadius, setModelRadius] = useState(6);
+  const actorRef = useRef<THREE.Group>(null);
 
   return (
     <Canvas
-      camera={{ position: [0, 3.6, 16], fov: 42 }}
+      camera={{ position: [0, 18, 10], fov: 42 }}
       gl={{ antialias: true, powerPreference: 'high-performance', localClippingEnabled: true }}
       style={{
         position: 'fixed',
@@ -468,10 +521,10 @@ export function ArcadeScene({
       <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
 
       <Suspense fallback={<LoadingFallback />}>
-        <AutoFitArcadeCamera radius={modelRadius} />
+        <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
         <ArcadeRig
+          actorRef={actorRef}
           moveRef={moveRef}
-          aimRef={aimRef}
           resetToken={resetToken}
           animationCue={animationCue}
           onModelRadiusChange={setModelRadius}

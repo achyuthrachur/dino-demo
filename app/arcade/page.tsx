@@ -275,7 +275,7 @@ export default function ArcadePage() {
             <div>Transport: <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code></div>
             <div>Bridge: <code>{bridgeUrl || 'ws://<host>:8787'}</code></div>
             <div>Controller: <code style={{ wordBreak: 'break-all' }}>{controllerUrl || '(loading...)'}</code></div>
-            <div>Controls: <strong style={{ color: 'var(--fg0)' }}>Left stick walk + right stick rotate</strong></div>
+            <div>Controls: <strong style={{ color: 'var(--fg0)' }}>Left stick tank walk + right stick camera pan</strong></div>
             <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
             <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
             <div>Status: <span>{lastError ?? statusNote}</span></div>
