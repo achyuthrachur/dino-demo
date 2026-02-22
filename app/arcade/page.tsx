@@ -18,6 +18,8 @@ import {
 import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
+const INPUT_INTERPOLATION_PER_SECOND = 18;
+
 function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
   if (status === 'connected') return '#7CF7C6';
   if (status === 'connecting') return '#F7D154';
@@ -43,10 +45,37 @@ export default function ArcadePage() {
 
   const moveRef = useRef<JoyVector>({ x: 0, y: 0 });
   const aimRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const moveTargetRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const aimTargetRef = useRef<JoyVector>({ x: 0, y: 0 });
+  const activeInputControllerRef = useRef<string | null>(null);
+  const lastInputSeqRef = useRef(-1);
   const clientIdRef = useRef(createClientId('mac'));
   const cueNonceRef = useRef(1);
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
   const useAbly = Boolean(ablyKey);
+
+  useEffect(() => {
+    let rafId = 0;
+    let prevTs = performance.now();
+
+    const step = (ts: number) => {
+      const delta = Math.min(0.08, Math.max(1 / 240, (ts - prevTs) / 1000));
+      prevTs = ts;
+      const alpha = 1 - Math.exp(-INPUT_INTERPOLATION_PER_SECOND * delta);
+
+      moveRef.current.x += (moveTargetRef.current.x - moveRef.current.x) * alpha;
+      moveRef.current.y += (moveTargetRef.current.y - moveRef.current.y) * alpha;
+      aimRef.current.x += (aimTargetRef.current.x - aimRef.current.x) * alpha;
+      aimRef.current.y += (aimTargetRef.current.y - aimRef.current.y) * alpha;
+
+      rafId = window.requestAnimationFrame(step);
+    };
+
+    rafId = window.requestAnimationFrame(step);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   const triggerAnimation = useCallback((kind: ArcadeAnimCueKind) => {
     setAnimationCue({
@@ -129,8 +158,17 @@ export default function ArcadePage() {
     if (message.session !== session) return;
 
     if (isControllerState(message)) {
-      moveRef.current = message.move;
-      aimRef.current = message.aim;
+      if (activeInputControllerRef.current !== message.clientId) {
+        activeInputControllerRef.current = message.clientId;
+        lastInputSeqRef.current = -1;
+      }
+      if (message.seq <= lastInputSeqRef.current) return;
+      lastInputSeqRef.current = message.seq;
+
+      moveTargetRef.current.x = message.move.x;
+      moveTargetRef.current.y = message.move.y;
+      aimTargetRef.current.x = message.aim.x;
+      aimTargetRef.current.y = message.aim.y;
       setActiveControllerId(message.clientId);
       setLastInputAt(message.t);
       return;
@@ -157,8 +195,14 @@ export default function ArcadePage() {
           triggerAnimation('victory');
           break;
         case 'reset_pose': {
-          moveRef.current = { x: 0, y: 0 };
-          aimRef.current = { x: 0, y: 0 };
+          moveTargetRef.current.x = 0;
+          moveTargetRef.current.y = 0;
+          aimTargetRef.current.x = 0;
+          aimTargetRef.current.y = 0;
+          moveRef.current.x = 0;
+          moveRef.current.y = 0;
+          aimRef.current.x = 0;
+          aimRef.current.y = 0;
           setAnimationCue(null);
           setResetToken((prev) => prev + 1);
           break;
@@ -202,6 +246,18 @@ export default function ArcadePage() {
     if (!lastInputAt) return true;
     return timeTick - lastInputAt > ARCADE_CONFIG.staleInputMs;
   }, [lastInputAt, timeTick]);
+
+  useEffect(() => {
+    if (status === 'connected' && !staleInput) return;
+    moveTargetRef.current.x = 0;
+    moveTargetRef.current.y = 0;
+    aimTargetRef.current.x = 0;
+    aimTargetRef.current.y = 0;
+    if (status !== 'connected') {
+      activeInputControllerRef.current = null;
+      lastInputSeqRef.current = -1;
+    }
+  }, [staleInput, status]);
 
   const formattedLastInput = useMemo(() => {
     if (!lastInputAt) return 'none';
@@ -322,8 +378,14 @@ export default function ArcadePage() {
             </button>
             <button
               onClick={() => {
-                moveRef.current = { x: 0, y: 0 };
-                aimRef.current = { x: 0, y: 0 };
+                moveTargetRef.current.x = 0;
+                moveTargetRef.current.y = 0;
+                aimTargetRef.current.x = 0;
+                aimTargetRef.current.y = 0;
+                moveRef.current.x = 0;
+                moveRef.current.y = 0;
+                aimRef.current.x = 0;
+                aimRef.current.y = 0;
                 setAnimationCue(null);
                 setResetToken((prev) => prev + 1);
               }}

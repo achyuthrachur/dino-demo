@@ -21,11 +21,13 @@ const GROUND_RAYCAST_TOP_PADDING = 20;
 const GROUND_Y_SMOOTHING_PER_SECOND = 14;
 const GROUND_MAX_Y_STEP_PER_SECOND = 4.2;
 const MOVE_TURN_DEADZONE = 0.22;
-const MOVE_TURN_SUPPRESS_THRESHOLD = 0.32;
-const MOVE_THROTTLE_SUPPRESS_THRESHOLD = 0.35;
+const MOVE_TURN_IDLE_GATE = 0.16;
+const MOVE_TURN_WHILE_MOVING_GATE = 0.58;
 const TURN_INPUT_SMOOTHING_PER_SECOND = 12;
 const THROTTLE_INPUT_SMOOTHING_PER_SECOND = 10;
-const WALK_LOOP_SPEED_THRESHOLD = 0.08;
+const WALK_LOOP_START_WORLD_SPEED = 0.12;
+const WALK_LOOP_STOP_WORLD_SPEED = 0.04;
+const LOCOMOTION_SPEED_SMOOTHING_PER_SECOND = 14;
 const CAMERA_YAW_RADIANS_PER_SECOND = 1.35;
 const CAMERA_PITCH_RADIANS_PER_SECOND = 1.45;
 const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
@@ -58,6 +60,7 @@ interface TerrainBounds {
 interface ArcadeRigProps {
   actorRef: MutableRefObject<THREE.Group | null>;
   moveRef: MutableRefObject<JoyVector>;
+  locomotionRef: MutableRefObject<LocomotionState>;
   terrainRootRef: MutableRefObject<THREE.Object3D | null>;
   terrainBoundsRef: MutableRefObject<TerrainBounds | null>;
   resetToken: number;
@@ -72,12 +75,18 @@ interface ArcadeSceneProps {
   animationCue: ArcadeAnimCue | null;
 }
 
+interface LocomotionState {
+  isMoving: boolean;
+  speedNorm: number;
+  moveDirection: 1 | -1;
+}
+
 interface ClipSet {
   minionSpawn: string | null;
   nextRound: string | null;
   playerSpawn: string | null;
   spawn: string | null;
-  spawnLoopAlt: string | null;
+  spawnWalkLoop: string | null;
   victory: string | null;
   victoryIn: string | null;
   victoryOut: string | null;
@@ -196,15 +205,15 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
       normalized.includes('raidspawn') &&
       !normalized.includes('minion') &&
       !normalized.includes('player') &&
-      !normalized.includes('walkalt'),
+      !normalized.includes('walkloop'),
   );
-  const spawnLoopAlt = pickClip(
+  const spawnWalkLoop = pickClip(
     animations,
     (normalized) =>
       normalized.includes('raidspawn') &&
       !normalized.includes('minion') &&
       !normalized.includes('player') &&
-      normalized.includes('walkalt'),
+      normalized.includes('walkloop'),
   );
   const victoryIn = pickClip(animations, (normalized) => normalized.includes('raidvictoryin'));
   const victoryOut = pickClip(animations, (normalized) => normalized.includes('raidvictoryout'));
@@ -223,7 +232,7 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
     nextRound,
     playerSpawn,
     spawn,
-    spawnLoopAlt,
+    spawnWalkLoop,
     victory,
     victoryIn,
     victoryOut,
@@ -377,6 +386,38 @@ function neutralizeTrackRootMotion(
   return new THREE.VectorKeyframeTrack(track.name, track.times.slice(), trackValues, track.getInterpolation());
 }
 
+function estimateClipFps(clip: THREE.AnimationClip): number {
+  let minDelta = Number.POSITIVE_INFINITY;
+  for (const track of clip.tracks) {
+    const keyframeTrack = track as THREE.KeyframeTrack & { times: ArrayLike<number> };
+    const times = keyframeTrack.times;
+    for (let i = 1; i < times.length; i += 1) {
+      const delta = (times[i] ?? 0) - (times[i - 1] ?? 0);
+      if (delta > 1e-4 && delta < minDelta) {
+        minDelta = delta;
+      }
+    }
+  }
+
+  if (!Number.isFinite(minDelta)) return 30;
+  const fps = 1 / minDelta;
+  return Math.max(24, Math.min(120, fps));
+}
+
+function createSpawnWalkLoopClip(baseClip: THREE.AnimationClip): THREE.AnimationClip | null {
+  const fps = estimateClipFps(baseClip);
+  const totalFrames = Math.max(3, Math.round(baseClip.duration * fps));
+  const startFrame = Math.max(0, Math.floor(totalFrames * 0.18));
+  const endFrame = Math.max(startFrame + 2, Math.floor(totalFrames * 0.86));
+  if (endFrame - startFrame < 2) return null;
+
+  const loopClip = THREE.AnimationUtils.subclip(baseClip, `${baseClip.name}__walk_loop`, startFrame, endFrame, fps);
+  if (!loopClip || loopClip.duration <= 0.05) return null;
+  loopClip.resetDuration();
+  loopClip.optimize();
+  return loopClip;
+}
+
 function prepareAnimationsForArcade(
   animations: THREE.AnimationClip[],
   restPositionsByNodeName: Map<string, THREE.Vector3>,
@@ -410,23 +451,24 @@ function prepareAnimationsForArcade(
     const isPrimarySpawnClip =
       normalized.includes('raidspawn') && !normalized.includes('minion') && !normalized.includes('player');
     if (isPrimarySpawnClip) {
-      const alt = cloned.clone();
-      alt.name = `${cloned.name}__walk_alt`;
-      prepared.push(alt);
+      const walkLoopClip = createSpawnWalkLoopClip(cloned);
+      if (walkLoopClip) {
+        prepared.push(walkLoopClip);
+      }
     }
   }
   return prepared;
 }
 
 interface RexyArcadeModelProps {
-  walkLoopEnabled: boolean;
+  locomotionRef: MutableRefObject<LocomotionState>;
   animationCue: ArcadeAnimCue | null;
   resetToken: number;
   onBoundsRadiusChange?: (radius: number) => void;
 }
 
 function RexyArcadeModel({
-  walkLoopEnabled,
+  locomotionRef,
   animationCue,
   resetToken,
   onBoundsRadiusChange,
@@ -448,19 +490,14 @@ function RexyArcadeModel({
 
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
   const currentActionLoopRef = useRef(false);
+  const locomotionActionRef = useRef<THREE.AnimationAction | null>(null);
   const fadeStopTimerRef = useRef<number | null>(null);
   const sequenceTimersRef = useRef<number[]>([]);
   const sequenceTokenRef = useRef(0);
   const sequenceActiveRef = useRef(false);
-  const walkCycleTimersRef = useRef<number[]>([]);
-  const walkCycleTokenRef = useRef(0);
   const walkCycleActiveRef = useRef(false);
-  const walkLoopEnabledRef = useRef(walkLoopEnabled);
+  const wasMovingRef = useRef(false);
   const clipSetRef = useRef(clipSet);
-
-  useEffect(() => {
-    walkLoopEnabledRef.current = walkLoopEnabled;
-  }, [walkLoopEnabled]);
 
   useEffect(() => {
     clipSetRef.current = clipSet;
@@ -492,11 +529,6 @@ function RexyArcadeModel({
   const clearSequenceTimers = useCallback(() => {
     sequenceTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     sequenceTimersRef.current = [];
-  }, []);
-
-  const clearWalkCycleTimers = useCallback(() => {
-    walkCycleTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    walkCycleTimersRef.current = [];
   }, []);
 
   const playClip = useCallback(
@@ -544,61 +576,31 @@ function RexyArcadeModel({
   );
 
   const stopWalkCycle = useCallback(() => {
-    walkCycleTokenRef.current += 1;
     walkCycleActiveRef.current = false;
-    clearWalkCycleTimers();
-  }, [clearWalkCycleTimers]);
+    locomotionActionRef.current = null;
+  }, []);
 
   const resolveWalkClipName = useCallback((activeClipSet: ClipSet): string | null => {
-    return activeClipSet.spawn ?? activeClipSet.minionSpawn;
+    return activeClipSet.spawnWalkLoop ?? activeClipSet.spawn ?? activeClipSet.minionSpawn;
   }, []);
 
   const startWalkCycle = useCallback(() => {
     const activeClipSet = clipSetRef.current;
     const walkClip = resolveWalkClipName(activeClipSet);
-    const walkAltClip = activeClipSet.spawnLoopAlt;
     if (!walkClip) {
       playClip(activeClipSet.idleFallback, true);
       return;
     }
 
-    stopWalkCycle();
     walkCycleActiveRef.current = true;
-    const token = walkCycleTokenRef.current;
-    const overlapMs = FADE_SECONDS * 620;
-
-    if (!walkAltClip) {
-      playClip(walkClip, true);
-      return;
-    }
-
-    const cycleClips = [walkClip, walkAltClip];
-    let index = 0;
-    const playAndScheduleNext = () => {
-      if (walkCycleTokenRef.current !== token) return;
-      if (!walkLoopEnabledRef.current || sequenceActiveRef.current) return;
-
-      const clipName = cycleClips[index % cycleClips.length];
-      index += 1;
-      playClip(clipName, false);
-
-      const durationMs = Math.max(180, (clipDurations.get(clipName) ?? 0.8) * 1000);
-      const delayMs = Math.max(140, durationMs - overlapMs);
-      walkCycleTimersRef.current.push(
-        window.setTimeout(() => {
-          playAndScheduleNext();
-        }, delayMs),
-      );
-    };
-
-    playAndScheduleNext();
-  }, [clipDurations, playClip, resolveWalkClipName, stopWalkCycle]);
+    locomotionActionRef.current = playClip(walkClip, true);
+  }, [playClip, resolveWalkClipName]);
 
   const syncBaseline = useCallback(() => {
     if (sequenceActiveRef.current) return;
     const activeClipSet = clipSetRef.current;
 
-    if (walkLoopEnabledRef.current) {
+    if (locomotionRef.current.isMoving) {
       if (!resolveWalkClipName(activeClipSet)) {
         stopWalkCycle();
         playClip(activeClipSet.idleFallback, true);
@@ -612,7 +614,37 @@ function RexyArcadeModel({
 
     stopWalkCycle();
     playClip(activeClipSet.idleFallback, true);
-  }, [playClip, resolveWalkClipName, startWalkCycle, stopWalkCycle]);
+  }, [locomotionRef, playClip, resolveWalkClipName, startWalkCycle, stopWalkCycle]);
+
+  useFrame((_, delta) => {
+    const isMoving = locomotionRef.current.isMoving;
+    if (isMoving !== wasMovingRef.current && !sequenceActiveRef.current) {
+      wasMovingRef.current = isMoving;
+      syncBaseline();
+    }
+    if (sequenceActiveRef.current) return;
+    if (!isMoving) return;
+
+    const activeClipSet = clipSetRef.current;
+    const walkClipName = resolveWalkClipName(activeClipSet);
+    if (!walkClipName) return;
+
+    const activeAction = currentActionRef.current;
+    const missingOrWrongAction =
+      !activeAction || !activeAction.isRunning() || activeAction.getClip().name !== walkClipName;
+    if (missingOrWrongAction) {
+      startWalkCycle();
+      return;
+    }
+
+    const locomotionAction = locomotionActionRef.current ?? activeAction;
+    locomotionActionRef.current = locomotionAction;
+    const speedNorm = THREE.MathUtils.clamp(locomotionRef.current.speedNorm, 0, 1);
+    const targetTimeScale = THREE.MathUtils.lerp(0.75, 1.25, speedNorm);
+    const currentScale = locomotionAction.getEffectiveTimeScale();
+    const smoothedScale = THREE.MathUtils.damp(currentScale, targetTimeScale, 10, delta);
+    locomotionAction.setEffectiveTimeScale(smoothedScale);
+  });
 
   const runSequence = useCallback(
     (clips: Array<string | null>) => {
@@ -655,8 +687,9 @@ function RexyArcadeModel({
   );
 
   useEffect(() => {
+    wasMovingRef.current = locomotionRef.current.isMoving;
     syncBaseline();
-  }, [clipSet, syncBaseline, walkLoopEnabled]);
+  }, [clipSet, locomotionRef, syncBaseline]);
 
   useEffect(() => {
     if (!animationCue) return;
@@ -709,8 +742,9 @@ function RexyArcadeModel({
     });
     currentActionRef.current = null;
     currentActionLoopRef.current = false;
+    wasMovingRef.current = locomotionRef.current.isMoving;
     syncBaseline();
-  }, [actions, clearFadeStopTimer, clearSequenceTimers, resetToken, stopWalkCycle, syncBaseline]);
+  }, [actions, clearFadeStopTimer, clearSequenceTimers, locomotionRef, resetToken, stopWalkCycle, syncBaseline]);
 
   useEffect(() => {
     return () => {
@@ -736,14 +770,13 @@ function RexyArcadeModel({
 function ArcadeRig({
   actorRef,
   moveRef,
+  locomotionRef,
   terrainRootRef,
   terrainBoundsRef,
   resetToken,
   animationCue,
   onModelRadiusChange,
 }: ArcadeRigProps) {
-  const [walkLoopEnabled, setWalkLoopEnabled] = useState(false);
-  const walkLoopEnabledRef = useRef(false);
   const headingYawRef = useRef(0);
   const bodyYawRef = useRef(0);
   const smoothedTurnInputRef = useRef(0);
@@ -827,8 +860,9 @@ function ArcadeRig({
   );
 
   useEffect(() => {
-    walkLoopEnabledRef.current = false;
-    setWalkLoopEnabled(false);
+    locomotionRef.current.isMoving = false;
+    locomotionRef.current.speedNorm = 0;
+    locomotionRef.current.moveDirection = 1;
     headingYawRef.current = 0;
     bodyYawRef.current = 0;
     smoothedTurnInputRef.current = 0;
@@ -843,7 +877,7 @@ function ArcadeRig({
       actorRef.current.position.set(0, 0, 0);
       actorRef.current.rotation.set(0, 0, 0);
     }
-  }, [actorRef, resetToken]);
+  }, [actorRef, locomotionRef, resetToken]);
 
   useFrame((_, delta) => {
     const group = actorRef.current;
@@ -852,15 +886,13 @@ function ArcadeRig({
     const move = moveRef.current;
     const rawTurnInput = applyDeadzone(move.x, MOVE_TURN_DEADZONE);
     const rawThrottleInput = applyDeadzone(move.y, ARCADE_CONFIG.deadzone);
-    const suppressedTurnInput =
-      Math.abs(rawThrottleInput) > MOVE_THROTTLE_SUPPRESS_THRESHOLD &&
-      Math.abs(rawTurnInput) < MOVE_TURN_SUPPRESS_THRESHOLD
-        ? 0
-        : rawTurnInput;
+    const throttleMagnitude = Math.abs(rawThrottleInput);
+    const requiredTurnMagnitude = throttleMagnitude > 0.25 ? MOVE_TURN_WHILE_MOVING_GATE : MOVE_TURN_IDLE_GATE;
+    const targetTurnInput = Math.abs(rawTurnInput) >= requiredTurnMagnitude ? rawTurnInput : 0;
 
     smoothedTurnInputRef.current = THREE.MathUtils.damp(
       smoothedTurnInputRef.current,
-      suppressedTurnInput,
+      targetTurnInput,
       TURN_INPUT_SMOOTHING_PER_SECOND,
       delta,
     );
@@ -875,12 +907,6 @@ function ArcadeRig({
     bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, headingYawRef.current, 9, delta);
     group.rotation.y = bodyYawRef.current;
 
-    const shouldWalkLoop = Math.abs(smoothedThrottleInputRef.current) > WALK_LOOP_SPEED_THRESHOLD;
-    if (shouldWalkLoop !== walkLoopEnabledRef.current) {
-      walkLoopEnabledRef.current = shouldWalkLoop;
-      setWalkLoopEnabled(shouldWalkLoop);
-    }
-
     if (Math.abs(smoothedThrottleInputRef.current) > 0.001) {
       forwardDirectionRef.current.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
       targetVelocityRef.current
@@ -892,6 +918,23 @@ function ArcadeRig({
     const alpha = 1 - Math.exp(-ARCADE_CONFIG.smoothingPerSecond * delta);
     velocityRef.current.lerp(targetVelocityRef.current, alpha);
     group.position.addScaledVector(velocityRef.current, delta);
+
+    const planarSpeed = Math.hypot(velocityRef.current.x, velocityRef.current.z);
+    const wasMoving = locomotionRef.current.isMoving;
+    const isMoving = wasMoving
+      ? planarSpeed > WALK_LOOP_STOP_WORLD_SPEED
+      : planarSpeed > WALK_LOOP_START_WORLD_SPEED;
+    locomotionRef.current.isMoving = isMoving;
+    const speedNormTarget = THREE.MathUtils.clamp(planarSpeed / WALK_METERS_PER_SECOND, 0, 1);
+    locomotionRef.current.speedNorm = THREE.MathUtils.damp(
+      locomotionRef.current.speedNorm,
+      speedNormTarget,
+      LOCOMOTION_SPEED_SMOOTHING_PER_SECOND,
+      delta,
+    );
+    if (Math.abs(smoothedThrottleInputRef.current) > 0.02) {
+      locomotionRef.current.moveDirection = smoothedThrottleInputRef.current >= 0 ? 1 : -1;
+    }
 
     const didClampXZ = clampToPlayableXZ(group);
 
@@ -933,7 +976,7 @@ function ArcadeRig({
   return (
     <group ref={actorRef}>
       <RexyArcadeModel
-        walkLoopEnabled={walkLoopEnabled}
+        locomotionRef={locomotionRef}
         animationCue={animationCue}
         resetToken={resetToken}
         onBoundsRadiusChange={onModelRadiusChange}
@@ -1046,6 +1089,11 @@ export function ArcadeScene({
 }: ArcadeSceneProps) {
   const [modelRadius, setModelRadius] = useState(6);
   const actorRef = useRef<THREE.Group>(null);
+  const locomotionRef = useRef<LocomotionState>({
+    isMoving: false,
+    speedNorm: 0,
+    moveDirection: 1,
+  });
   const terrainRootRef = useRef<THREE.Object3D | null>(null);
   const terrainBoundsRef = useRef<TerrainBounds | null>(null);
 
@@ -1075,6 +1123,7 @@ export function ArcadeScene({
         <ArcadeRig
           actorRef={actorRef}
           moveRef={moveRef}
+          locomotionRef={locomotionRef}
           terrainRootRef={terrainRootRef}
           terrainBoundsRef={terrainBoundsRef}
           resetToken={resetToken}
