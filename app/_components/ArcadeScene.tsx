@@ -10,33 +10,34 @@ const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const TERRAIN_GLB_PATH = '/models/environments/haytor_dartmoor_terrain.glb';
 const TERRAIN_SCALE = 0.2;
 const FADE_SECONDS = 0.24;
-const WALK_METERS_PER_SECOND = 3.2;
+const WALK_METERS_PER_SECOND = 2.25;
 const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
 const TERRAIN_BOUNDS_INSET = 0.8;
 const GROUND_CLEARANCE_OFFSET = 0.04;
-const GROUND_RAYCAST_HZ = 30;
+const GROUND_RAYCAST_HZ = 60;
 const GROUND_RAYCAST_MAX_DISTANCE = 400;
 const GROUND_RAYCAST_TOP_PADDING = 20;
 const GROUND_Y_SMOOTHING_PER_SECOND = 14;
+const GROUND_MAX_Y_STEP_PER_SECOND = 4.2;
 const MOVE_TURN_DEADZONE = 0.22;
 const MOVE_TURN_SUPPRESS_THRESHOLD = 0.32;
 const MOVE_THROTTLE_SUPPRESS_THRESHOLD = 0.35;
 const TURN_INPUT_SMOOTHING_PER_SECOND = 12;
 const THROTTLE_INPUT_SMOOTHING_PER_SECOND = 10;
 const WALK_LOOP_SPEED_THRESHOLD = 0.08;
-const CAMERA_YAW_RADIANS_PER_SECOND = 1.2;
-const CAMERA_PITCH_RADIANS_PER_SECOND = 1.6;
+const CAMERA_YAW_RADIANS_PER_SECOND = 1.35;
+const CAMERA_PITCH_RADIANS_PER_SECOND = 1.45;
 const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
 const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(28);
 const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
 const CAMERA_DISTANCE_MULTIPLIER = 2.08;
 const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
 const CAMERA_POSITION_SMOOTHING_PER_SECOND = 10;
-const CAMERA_INPUT_SMOOTHING_PER_SECOND = 8;
-const CAMERA_STICK_DEADZONE = 0.015;
-const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(1.4);
-const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.1);
+const CAMERA_INPUT_SMOOTHING_PER_SECOND = 16;
+const CAMERA_STICK_DEADZONE = 0.005;
+const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(1.2);
+const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.0);
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -76,6 +77,7 @@ interface ClipSet {
   nextRound: string | null;
   playerSpawn: string | null;
   spawn: string | null;
+  spawnLoopAlt: string | null;
   victory: string | null;
   victoryIn: string | null;
   victoryOut: string | null;
@@ -193,7 +195,16 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
     (normalized) =>
       normalized.includes('raidspawn') &&
       !normalized.includes('minion') &&
-      !normalized.includes('player'),
+      !normalized.includes('player') &&
+      !normalized.includes('walkalt'),
+  );
+  const spawnLoopAlt = pickClip(
+    animations,
+    (normalized) =>
+      normalized.includes('raidspawn') &&
+      !normalized.includes('minion') &&
+      !normalized.includes('player') &&
+      normalized.includes('walkalt'),
   );
   const victoryIn = pickClip(animations, (normalized) => normalized.includes('raidvictoryin'));
   const victoryOut = pickClip(animations, (normalized) => normalized.includes('raidvictoryout'));
@@ -212,6 +223,7 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
     nextRound,
     playerSpawn,
     spawn,
+    spawnLoopAlt,
     victory,
     victoryIn,
     victoryOut,
@@ -235,8 +247,7 @@ function getTrackNodeName(trackName: string): string {
 }
 
 function shapeCameraStick(value: number): number {
-  if (value === 0) return 0;
-  return Math.sign(value) * Math.pow(Math.abs(value), 1.6);
+  return value;
 }
 
 function buildRestPositionMap(root: THREE.Object3D): Map<string, THREE.Vector3> {
@@ -370,16 +381,19 @@ function prepareAnimationsForArcade(
   animations: THREE.AnimationClip[],
   restPositionsByNodeName: Map<string, THREE.Vector3>,
 ): THREE.AnimationClip[] {
-  return animations.map((clip) => {
+  const prepared: THREE.AnimationClip[] = [];
+  for (const clip of animations) {
     const normalized = normalizeClipName(clip.name);
     if (!isWalkCycleClipName(normalized)) {
-      return clip;
+      prepared.push(clip);
+      continue;
     }
 
     const cloned = clip.clone();
     const rootMotionTrack = findRootMotionTrack(cloned);
     if (!rootMotionTrack) {
-      return cloned;
+      prepared.push(cloned);
+      continue;
     }
     const rootTrackNodeName = getTrackNodeName(rootMotionTrack.name).toLowerCase();
     cloned.tracks = cloned.tracks.map((track) =>
@@ -390,13 +404,22 @@ function prepareAnimationsForArcade(
           ? freezeQuaternionTrack(track)
           : track.clone(),
     );
-    return cloned;
-  });
+
+    prepared.push(cloned);
+
+    const isPrimarySpawnClip =
+      normalized.includes('raidspawn') && !normalized.includes('minion') && !normalized.includes('player');
+    if (isPrimarySpawnClip) {
+      const alt = cloned.clone();
+      alt.name = `${cloned.name}__walk_alt`;
+      prepared.push(alt);
+    }
+  }
+  return prepared;
 }
 
 interface RexyArcadeModelProps {
   walkLoopEnabled: boolean;
-  walkDirection: number;
   animationCue: ArcadeAnimCue | null;
   resetToken: number;
   onBoundsRadiusChange?: (radius: number) => void;
@@ -404,7 +427,6 @@ interface RexyArcadeModelProps {
 
 function RexyArcadeModel({
   walkLoopEnabled,
-  walkDirection,
   animationCue,
   resetToken,
   onBoundsRadiusChange,
@@ -430,18 +452,15 @@ function RexyArcadeModel({
   const sequenceTimersRef = useRef<number[]>([]);
   const sequenceTokenRef = useRef(0);
   const sequenceActiveRef = useRef(false);
+  const walkCycleTimersRef = useRef<number[]>([]);
+  const walkCycleTokenRef = useRef(0);
   const walkCycleActiveRef = useRef(false);
   const walkLoopEnabledRef = useRef(walkLoopEnabled);
-  const walkDirectionRef = useRef(walkDirection);
   const clipSetRef = useRef(clipSet);
 
   useEffect(() => {
     walkLoopEnabledRef.current = walkLoopEnabled;
   }, [walkLoopEnabled]);
-
-  useEffect(() => {
-    walkDirectionRef.current = walkDirection;
-  }, [walkDirection]);
 
   useEffect(() => {
     clipSetRef.current = clipSet;
@@ -473,6 +492,11 @@ function RexyArcadeModel({
   const clearSequenceTimers = useCallback(() => {
     sequenceTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     sequenceTimersRef.current = [];
+  }, []);
+
+  const clearWalkCycleTimers = useCallback(() => {
+    walkCycleTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    walkCycleTimersRef.current = [];
   }, []);
 
   const playClip = useCallback(
@@ -520,41 +544,67 @@ function RexyArcadeModel({
   );
 
   const stopWalkCycle = useCallback(() => {
+    walkCycleTokenRef.current += 1;
     walkCycleActiveRef.current = false;
-  }, []);
+    clearWalkCycleTimers();
+  }, [clearWalkCycleTimers]);
 
   const resolveWalkClipName = useCallback((activeClipSet: ClipSet): string | null => {
-    const preferredClip = walkDirectionRef.current < 0 ? activeClipSet.minionSpawn : activeClipSet.spawn;
-    const fallbackClip = walkDirectionRef.current < 0 ? activeClipSet.spawn : activeClipSet.minionSpawn;
-    return preferredClip ?? fallbackClip;
+    return activeClipSet.spawn ?? activeClipSet.minionSpawn;
   }, []);
 
   const startWalkCycle = useCallback(() => {
     const activeClipSet = clipSetRef.current;
     const walkClip = resolveWalkClipName(activeClipSet);
+    const walkAltClip = activeClipSet.spawnLoopAlt;
     if (!walkClip) {
       playClip(activeClipSet.idleFallback, true);
       return;
     }
 
+    stopWalkCycle();
     walkCycleActiveRef.current = true;
-    playClip(walkClip, true);
-  }, [playClip, resolveWalkClipName]);
+    const token = walkCycleTokenRef.current;
+    const overlapMs = FADE_SECONDS * 620;
+
+    if (!walkAltClip) {
+      playClip(walkClip, true);
+      return;
+    }
+
+    const cycleClips = [walkClip, walkAltClip];
+    let index = 0;
+    const playAndScheduleNext = () => {
+      if (walkCycleTokenRef.current !== token) return;
+      if (!walkLoopEnabledRef.current || sequenceActiveRef.current) return;
+
+      const clipName = cycleClips[index % cycleClips.length];
+      index += 1;
+      playClip(clipName, false);
+
+      const durationMs = Math.max(180, (clipDurations.get(clipName) ?? 0.8) * 1000);
+      const delayMs = Math.max(140, durationMs - overlapMs);
+      walkCycleTimersRef.current.push(
+        window.setTimeout(() => {
+          playAndScheduleNext();
+        }, delayMs),
+      );
+    };
+
+    playAndScheduleNext();
+  }, [clipDurations, playClip, resolveWalkClipName, stopWalkCycle]);
 
   const syncBaseline = useCallback(() => {
     if (sequenceActiveRef.current) return;
     const activeClipSet = clipSetRef.current;
 
     if (walkLoopEnabledRef.current) {
-      const walkClip = resolveWalkClipName(activeClipSet);
-      const currentClipName = currentActionRef.current?.getClip().name ?? null;
-      const isCurrentActionRunning = currentActionRef.current?.isRunning() ?? false;
-      if (!walkClip) {
+      if (!resolveWalkClipName(activeClipSet)) {
         stopWalkCycle();
         playClip(activeClipSet.idleFallback, true);
         return;
       }
-      if (!walkCycleActiveRef.current || currentClipName !== walkClip || !isCurrentActionRunning) {
+      if (!walkCycleActiveRef.current) {
         startWalkCycle();
       }
       return;
@@ -606,7 +656,7 @@ function RexyArcadeModel({
 
   useEffect(() => {
     syncBaseline();
-  }, [clipSet, syncBaseline, walkDirection, walkLoopEnabled]);
+  }, [clipSet, syncBaseline, walkLoopEnabled]);
 
   useEffect(() => {
     if (!animationCue) return;
@@ -674,15 +724,6 @@ function RexyArcadeModel({
     };
   }, [actions, clearFadeStopTimer, clearSequenceTimers, stopWalkCycle]);
 
-  useFrame(() => {
-    if (sequenceActiveRef.current) return;
-    if (!walkLoopEnabledRef.current) return;
-    const activeAction = currentActionRef.current;
-    if (!activeAction || !activeAction.isRunning()) {
-      startWalkCycle();
-    }
-  });
-
   return (
     <group ref={groupRef}>
       <group position={transform.offset}>
@@ -702,9 +743,7 @@ function ArcadeRig({
   onModelRadiusChange,
 }: ArcadeRigProps) {
   const [walkLoopEnabled, setWalkLoopEnabled] = useState(false);
-  const [walkDirection, setWalkDirection] = useState(1);
   const walkLoopEnabledRef = useRef(false);
-  const walkDirectionRef = useRef(1);
   const headingYawRef = useRef(0);
   const bodyYawRef = useRef(0);
   const smoothedTurnInputRef = useRef(0);
@@ -789,9 +828,7 @@ function ArcadeRig({
 
   useEffect(() => {
     walkLoopEnabledRef.current = false;
-    walkDirectionRef.current = 1;
     setWalkLoopEnabled(false);
-    setWalkDirection(1);
     headingYawRef.current = 0;
     bodyYawRef.current = 0;
     smoothedTurnInputRef.current = 0;
@@ -844,14 +881,6 @@ function ArcadeRig({
       setWalkLoopEnabled(shouldWalkLoop);
     }
 
-    if (Math.abs(smoothedThrottleInputRef.current) > WALK_LOOP_SPEED_THRESHOLD) {
-      const desiredDirection = smoothedThrottleInputRef.current < 0 ? -1 : 1;
-      if (desiredDirection !== walkDirectionRef.current) {
-        walkDirectionRef.current = desiredDirection;
-        setWalkDirection(desiredDirection);
-      }
-    }
-
     if (Math.abs(smoothedThrottleInputRef.current) > 0.001) {
       forwardDirectionRef.current.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
       targetVelocityRef.current
@@ -889,12 +918,14 @@ function ArcadeRig({
         group.position.y = targetGroundYRef.current;
         forceGroundSnapRef.current = false;
       } else {
-        group.position.y = THREE.MathUtils.damp(
+        const smoothedY = THREE.MathUtils.damp(
           group.position.y,
           targetGroundYRef.current,
           GROUND_Y_SMOOTHING_PER_SECOND,
           delta,
         );
+        const maxYStep = GROUND_MAX_Y_STEP_PER_SECOND * delta;
+        group.position.y += THREE.MathUtils.clamp(smoothedY - group.position.y, -maxYStep, maxYStep);
       }
     }
   });
@@ -903,7 +934,6 @@ function ArcadeRig({
     <group ref={actorRef}>
       <RexyArcadeModel
         walkLoopEnabled={walkLoopEnabled}
-        walkDirection={walkDirection}
         animationCue={animationCue}
         resetToken={resetToken}
         onBoundsRadiusChange={onModelRadiusChange}
