@@ -1,11 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import {
-  ARCADE_CONFIG,
-  clamp,
-  type JoyVector,
-} from '@/app/_lib/arcade/config';
+import { ARCADE_CONFIG, clamp, type JoyVector } from '@/app/_lib/arcade/config';
 import { type ArcadeAction, type WireMessage } from '@/app/_lib/arcade/protocol';
 import {
   createClientId,
@@ -16,182 +12,202 @@ import {
 import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
-const KNOB_SIZE = 62;
-const STICK_SIZE_PORTRAIT = 'min(30svh, clamp(96px, 30vw, 150px))';
-const STICK_SIZE_LANDSCAPE = 'min(34dvh, clamp(82px, 16vw, 118px))';
+// ─── constants ────────────────────────────────────────────────────────────────
 
-function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
-  if (status === 'connected') return '#7CF7C6';
-  if (status === 'connecting') return '#F7D154';
-  return '#FF7B7B';
+const KNOB_SIZE = 54;
+const PAD_PORTRAIT  = 'min(40svh, 46vw)';
+const PAD_LANDSCAPE = 'min(64dvh, 27vw)';
+const MONO = "ui-monospace,'SF Mono','Fira Code',monospace";
+
+// cardinal-hint base style (shared)
+const HINT: CSSProperties = {
+  position: 'absolute', fontSize: 8, lineHeight: 1,
+  color: 'rgba(255,255,255,0.12)', pointerEvents: 'none',
+  fontFamily: MONO, userSelect: 'none',
+};
+
+// knob base (shared between both sticks)
+const KNOB: CSSProperties = {
+  position: 'absolute', left: '50%', top: '50%',
+  width: KNOB_SIZE, height: KNOB_SIZE,
+  borderRadius: '50%',
+};
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function statusColor(s: 'disconnected' | 'connecting' | 'connected'): string {
+  return s === 'connected' ? '#00FFB3' : s === 'connecting' ? '#FFB300' : '#FF4455';
 }
 
+function padStyle(accent: string, size: string): CSSProperties {
+  return {
+    width: size, height: size,
+    borderRadius: '50%', touchAction: 'none', position: 'relative', flexShrink: 0,
+    background: 'radial-gradient(circle at 32% 28%, rgba(255,255,255,0.042) 0%, #0D1018 55%, #090B10 100%)',
+    border: `1.5px solid ${accent}38`,
+    boxShadow: `inset 0 0 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.032), inset 0 0 0 1px ${accent}12`,
+  };
+}
+
+function btnStyle(color: string, compact: boolean): CSSProperties {
+  return {
+    appearance: 'none',
+    border: `1px solid ${color}38`,
+    background: `${color}12`,
+    color: `${color}BB`,
+    borderRadius: 7,
+    minHeight: compact ? 36 : 44,
+    fontSize: compact ? 10 : 11,
+    fontWeight: 700,
+    letterSpacing: '0.1em',
+    touchAction: 'manipulation',
+    cursor: 'pointer',
+    fontFamily: MONO,
+    boxShadow: `inset 0 1px 0 ${color}1E, 0 1px 3px rgba(0,0,0,0.45)`,
+    padding: 0,
+  };
+}
+
+// ─── component ────────────────────────────────────────────────────────────────
+
 export default function ControllerPage() {
-  const [session, setSession] = useState('');
-  const [bridgeUrl, setBridgeUrl] = useState('');
-  const [statusNote, setStatusNote] = useState('Waiting for bridge...');
+  const [session, setSession]           = useState('');
+  const [bridgeUrl, setBridgeUrl]       = useState('');
+  const [statusNote, setStatusNote]     = useState('Waiting for bridge...');
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
-  const [isLandscape, setIsLandscape] = useState(false);
-  const [moveUi, setMoveUi] = useState<JoyVector>({ x: 0, y: 0 });
-  const [aimUi, setAimUi] = useState<JoyVector>({ x: 0, y: 0 });
-  const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
-  const useAbly = Boolean(ablyKey);
+  const [isLandscape, setIsLandscape]   = useState(false);
+  const [moveUi, setMoveUi]             = useState<JoyVector>({ x: 0, y: 0 });
+  const [aimUi,  setAimUi]              = useState<JoyVector>({ x: 0, y: 0 });
 
-  const movePadRef = useRef<HTMLDivElement>(null);
-  const aimPadRef = useRef<HTMLDivElement>(null);
-  const moveRef = useRef<JoyVector>({ x: 0, y: 0 });
-  const aimRef = useRef<JoyVector>({ x: 0, y: 0 });
-  const moveDraggingRef = useRef(false);
-  const aimDraggingRef = useRef(false);
-  const clientIdRef = useRef(createClientId('phone'));
-  const seqRef = useRef(1);
+  const ablyKey  = process.env.NEXT_PUBLIC_ABLY_KEY;
+  const useAbly  = Boolean(ablyKey);
 
+  const movePadRef       = useRef<HTMLDivElement>(null);
+  const aimPadRef        = useRef<HTMLDivElement>(null);
+  const moveRef          = useRef<JoyVector>({ x: 0, y: 0 });
+  const aimRef           = useRef<JoyVector>({ x: 0, y: 0 });
+  const moveDraggingRef  = useRef(false);
+  const aimDraggingRef   = useRef(false);
+  const clientIdRef      = useRef(createClientId('phone'));
+  const seqRef           = useRef(1);
+
+  // ── session + bridge init ──────────────────────────────────────────────────
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const initialSession = sanitizeSessionCode(params.get('session')) || createSessionCode();
+    const params          = new URLSearchParams(window.location.search);
+    const initialSession  = sanitizeSessionCode(params.get('session')) || createSessionCode();
     setSession(initialSession);
     setBridgeUrl(useAbly ? 'ably://realtime' : resolveBridgeUrl(window.location));
-    const bridgeOverride = params.get('bridge');
-    const hosted = window.location.hostname.includes('vercel.app');
+    const bridgeOverride  = params.get('bridge');
+    const hosted          = window.location.hostname.includes('vercel.app');
     if (hosted && !bridgeOverride && !useAbly) {
-      setDeployWarning(
-        'Controller needs a local bridge from the Mac host. Open the Mac /arcade page running on LAN and use its generated controller URL.',
-      );
+      setDeployWarning('Needs local bridge from Mac /arcade page.');
     }
-
     if (params.get('session') !== initialSession) {
       params.set('session', initialSession);
-      const nextUrl = `${window.location.pathname}?${params.toString()}`;
-      window.history.replaceState({}, '', nextUrl);
+      window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
     }
   }, [useAbly]);
 
+  // ── prevent scroll / overscroll ───────────────────────────────────────────
   useEffect(() => {
-    const previousTouchAction = document.body.style.touchAction;
-    const previousOverscroll = document.body.style.overscrollBehavior;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.touchAction = 'none';
+    const prev = {
+      ta: document.body.style.touchAction,
+      os: document.body.style.overscrollBehavior,
+      ov: document.body.style.overflow,
+    };
+    document.body.style.touchAction        = 'none';
     document.body.style.overscrollBehavior = 'none';
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow           = 'hidden';
     return () => {
-      document.body.style.touchAction = previousTouchAction;
-      document.body.style.overscrollBehavior = previousOverscroll;
-      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction        = prev.ta;
+      document.body.style.overscrollBehavior = prev.os;
+      document.body.style.overflow           = prev.ov;
     };
   }, []);
 
+  // ── orientation ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const updateOrientation = () => {
-      setIsLandscape(window.innerWidth > window.innerHeight);
-    };
-    updateOrientation();
-    window.addEventListener('resize', updateOrientation);
-    window.addEventListener('orientationchange', updateOrientation);
+    const update = () => setIsLandscape(window.innerWidth > window.innerHeight);
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
     return () => {
-      window.removeEventListener('resize', updateOrientation);
-      window.removeEventListener('orientationchange', updateOrientation);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
     };
   }, []);
 
   useEffect(() => {
     if (!isLandscape) return;
-    const orientationApi = screen.orientation as ScreenOrientation & {
-      lock?: (orientation: 'landscape') => Promise<void>;
-    };
-    if (!orientationApi?.lock) return;
-    void orientationApi.lock('landscape').catch(() => {
-      // iOS Safari does not support orientation lock for regular pages.
-    });
+    const api = screen.orientation as ScreenOrientation & { lock?: (o: 'landscape') => Promise<void> };
+    if (api?.lock) void api.lock('landscape').catch(() => {});
   }, [isLandscape]);
 
+  // ── transport ─────────────────────────────────────────────────────────────
   const onSocketMessage = useCallback((message: WireMessage) => {
     if (message.session !== session) return;
-    if (message.type === 'status') {
-      setStatusNote(message.message ?? (message.ok ? 'Connected' : 'Bridge status'));
-    }
-    if (message.type === 'ack') {
-      setStatusNote(message.ok ? 'Input acknowledged' : (message.message ?? 'Ack failed'));
-    }
+    if (message.type === 'status') setStatusNote(message.message ?? (message.ok ? 'Connected' : 'Bridge status'));
+    if (message.type === 'ack')    setStatusNote(message.ok ? 'Input acknowledged' : (message.message ?? 'Ack failed'));
   }, [session]);
 
   const socketTransport = useSessionSocket({
-    enabled: !useAbly,
-    role: 'phone',
-    session,
-    clientId: clientIdRef.current,
-    bridgeUrl,
-    onMessage: onSocketMessage,
+    enabled: !useAbly, role: 'phone', session,
+    clientId: clientIdRef.current, bridgeUrl, onMessage: onSocketMessage,
   });
-
   const ablyTransport = useAblySession({
-    enabled: useAbly,
-    ablyKey,
-    role: 'phone',
-    session,
-    clientId: clientIdRef.current,
-    onMessage: onSocketMessage,
+    enabled: useAbly, ablyKey, role: 'phone',
+    session, clientId: clientIdRef.current, onMessage: onSocketMessage,
   });
 
-  const status = useAbly ? ablyTransport.status : socketTransport.status;
+  const status    = useAbly ? ablyTransport.status    : socketTransport.status;
   const lastError = useAbly ? ablyTransport.lastError : socketTransport.lastError;
+
   const send = useCallback((message: WireMessage) => {
     if (useAbly) return ablyTransport.send(message);
     return socketTransport.send(message);
   }, [ablyTransport, socketTransport, useAbly]);
 
+  // ── joystick polling ──────────────────────────────────────────────────────
   useEffect(() => {
     if (status !== 'connected' || !session) return;
-    const interval = window.setInterval(() => {
+    const id = window.setInterval(() => {
       send({
-        type: 'controller_state',
-        session,
+        type: 'controller_state', session,
         clientId: clientIdRef.current,
-        t: Date.now(),
-        seq: seqRef.current++,
-        move: moveRef.current,
-        aim: aimRef.current,
+        t: Date.now(), seq: seqRef.current++,
+        move: moveRef.current, aim: aimRef.current,
       });
     }, ARCADE_CONFIG.joystickIntervalMs);
-
-    return () => {
-      window.clearInterval(interval);
-    };
+    return () => window.clearInterval(id);
   }, [send, session, status]);
 
+  // ── vector math ───────────────────────────────────────────────────────────
   const vectorFromPadPointer = useCallback((pad: HTMLDivElement | null, clientX: number, clientY: number) => {
     if (!pad) return null;
-    const rect = pad.getBoundingClientRect();
+    const rect   = pad.getBoundingClientRect();
     const radius = rect.width / 2;
-    const centerX = rect.left + radius;
-    const centerY = rect.top + radius;
-
-    const dx = clientX - centerX;
-    const dy = clientY - centerY;
-    const distance = Math.hypot(dx, dy);
-    const clampedDistance = Math.min(distance, radius);
-    const angle = Math.atan2(dy, dx);
-
-    const localX = Math.cos(angle) * clampedDistance;
-    const localY = Math.sin(angle) * clampedDistance;
-
+    const dx     = clientX - (rect.left + radius);
+    const dy     = clientY - (rect.top  + radius);
+    const clamped = Math.min(Math.hypot(dx, dy), radius);
+    const angle   = Math.atan2(dy, dx);
     return {
-      x: clamp(localX / radius, -1, 1),
-      y: clamp((-localY) / radius, -1, 1),
+      x: clamp(Math.cos(angle) * clamped / radius, -1, 1),
+      y: clamp(-Math.sin(angle) * clamped / radius, -1, 1),
     } as JoyVector;
   }, []);
 
-  const updateMoveFromPointer = useCallback((clientX: number, clientY: number) => {
-    const vector = vectorFromPadPointer(movePadRef.current, clientX, clientY);
-    if (!vector) return;
-    moveRef.current = vector;
-    setMoveUi(vector);
+  const updateMoveFromPointer = useCallback((cx: number, cy: number) => {
+    const v = vectorFromPadPointer(movePadRef.current, cx, cy);
+    if (!v) return;
+    moveRef.current = v;
+    setMoveUi(v);
   }, [vectorFromPadPointer]);
 
-  const updateAimFromPointer = useCallback((clientX: number, clientY: number) => {
-    const vector = vectorFromPadPointer(aimPadRef.current, clientX, clientY);
-    if (!vector) return;
-    aimRef.current = vector;
-    setAimUi(vector);
+  const updateAimFromPointer = useCallback((cx: number, cy: number) => {
+    const v = vectorFromPadPointer(aimPadRef.current, cx, cy);
+    if (!v) return;
+    aimRef.current = v;
+    setAimUi(v);
   }, [vectorFromPadPointer]);
 
   const releaseMoveStick = useCallback(() => {
@@ -206,15 +222,13 @@ export default function ControllerPage() {
     setAimUi({ x: 0, y: 0 });
   }, []);
 
+  // ── action dispatch ───────────────────────────────────────────────────────
   const handleAction = useCallback((action: ArcadeAction): boolean => {
     if (status !== 'connected') return false;
     return send({
-      type: 'action',
-      session,
+      type: 'action', session,
       clientId: clientIdRef.current,
-      t: Date.now(),
-      seq: seqRef.current++,
-      action,
+      t: Date.now(), seq: seqRef.current++, action,
     });
   }, [send, session, status]);
 
@@ -225,305 +239,156 @@ export default function ControllerPage() {
     releaseAimStick();
   }, [handleAction, releaseAimStick, releaseMoveStick]);
 
-  const moveKnobTranslate = useMemo(() => {
-    const maxOffset = 82;
-    return {
-      x: moveUi.x * maxOffset,
-      y: -moveUi.y * maxOffset,
-    };
-  }, [moveUi.x, moveUi.y]);
+  // ── knob positions ────────────────────────────────────────────────────────
+  const moveKnob = useMemo(() => ({ x: moveUi.x * 56, y: -moveUi.y * 56 }), [moveUi.x, moveUi.y]);
+  const aimKnob  = useMemo(() => ({ x: aimUi.x  * 56, y: -aimUi.y  * 56 }), [aimUi.x,  aimUi.y]);
 
-  const aimKnobTranslate = useMemo(() => {
-    const maxOffset = 82;
-    return {
-      x: aimUi.x * maxOffset,
-      y: -aimUi.y * maxOffset,
-    };
-  }, [aimUi.x, aimUi.y]);
+  // ── derived display values ────────────────────────────────────────────────
+  const sc          = statusColor(status);
+  const statusLabel = status === 'connected' ? 'LIVE' : status === 'connecting' ? 'SYNC' : 'OFF';
+  const errorLine   = lastError ?? (status !== 'connected' ? (deployWarning ?? statusNote) : null);
+  const padSize     = isLandscape ? PAD_LANDSCAPE : PAD_PORTRAIT;
 
-  const stickSize = isLandscape ? STICK_SIZE_LANDSCAPE : STICK_SIZE_PORTRAIT;
+  // ── joystick elements ─────────────────────────────────────────────────────
 
-  const actionButtons = (
+  const moveStick = (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+      <div
+        ref={movePadRef}
+        role="application"
+        aria-label="Move joystick"
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); moveDraggingRef.current = true; updateMoveFromPointer(e.clientX, e.clientY); }}
+        onPointerMove={(e) => { if (!moveDraggingRef.current) return; updateMoveFromPointer(e.clientX, e.clientY); }}
+        onPointerUp={releaseMoveStick}
+        onPointerCancel={releaseMoveStick}
+        style={padStyle('#00FFB3', padSize)}
+      >
+        {/* crosshair */}
+        <div style={{ position:'absolute', inset:0, pointerEvents:'none', borderRadius:'50%',
+          background:'linear-gradient(transparent calc(50% - 0.5px),rgba(0,255,179,0.09) calc(50% - 0.5px) calc(50% + 0.5px),transparent calc(50% + 0.5px)),linear-gradient(90deg,transparent calc(50% - 0.5px),rgba(0,255,179,0.09) calc(50% - 0.5px) calc(50% + 0.5px),transparent calc(50% + 0.5px))' }} />
+        {/* inner ring */}
+        <div style={{ position:'absolute', width:'62%', height:'62%', left:'19%', top:'19%', borderRadius:'50%', border:'1px solid rgba(0,255,179,0.07)', pointerEvents:'none' }} />
+        {/* cardinal hints */}
+        <span style={{ ...HINT, top:9, left:'50%', transform:'translateX(-50%)' }}>▲</span>
+        <span style={{ ...HINT, bottom:9, left:'50%', transform:'translateX(-50%)' }}>▼</span>
+        {/* knob */}
+        <div style={{ ...KNOB,
+          background:'radial-gradient(circle at 34% 28%,#AAFEE2,#3DB57A 52%,#1A7A52)',
+          transform:`translate(calc(-50% + ${moveKnob.x}px),calc(-50% + ${moveKnob.y}px))`,
+          boxShadow:'0 6px 18px rgba(0,0,0,0.65),0 0 0 2px rgba(0,255,179,0.18),inset 0 1px 0 rgba(255,255,255,0.3)',
+        }} />
+      </div>
+      <span style={{ fontSize:9, letterSpacing:'0.22em', color:'rgba(0,255,179,0.42)', fontWeight:600, fontFamily:MONO }}>MOVE</span>
+    </div>
+  );
+
+  const aimStick = (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+      <div
+        ref={aimPadRef}
+        role="application"
+        aria-label="Camera joystick"
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); aimDraggingRef.current = true; updateAimFromPointer(e.clientX, e.clientY); }}
+        onPointerMove={(e) => { if (!aimDraggingRef.current) return; updateAimFromPointer(e.clientX, e.clientY); }}
+        onPointerUp={releaseAimStick}
+        onPointerCancel={releaseAimStick}
+        style={padStyle('#54C0E8', padSize)}
+      >
+        {/* crosshair */}
+        <div style={{ position:'absolute', inset:0, pointerEvents:'none', borderRadius:'50%',
+          background:'linear-gradient(transparent calc(50% - 0.5px),rgba(84,192,232,0.09) calc(50% - 0.5px) calc(50% + 0.5px),transparent calc(50% + 0.5px)),linear-gradient(90deg,transparent calc(50% - 0.5px),rgba(84,192,232,0.09) calc(50% - 0.5px) calc(50% + 0.5px),transparent calc(50% + 0.5px))' }} />
+        {/* inner ring */}
+        <div style={{ position:'absolute', width:'62%', height:'62%', left:'19%', top:'19%', borderRadius:'50%', border:'1px solid rgba(84,192,232,0.07)', pointerEvents:'none' }} />
+        {/* cardinal hints */}
+        <span style={{ ...HINT, top:'50%', left:9, transform:'translateY(-50%)' }}>◀</span>
+        <span style={{ ...HINT, top:'50%', right:9, transform:'translateY(-50%)' }}>▶</span>
+        {/* knob */}
+        <div style={{ ...KNOB,
+          background:'radial-gradient(circle at 34% 28%,#CDE8FF,#4A97D4 52%,#2060A8)',
+          transform:`translate(calc(-50% + ${aimKnob.x}px),calc(-50% + ${aimKnob.y}px))`,
+          boxShadow:'0 6px 18px rgba(0,0,0,0.65),0 0 0 2px rgba(84,192,232,0.18),inset 0 1px 0 rgba(255,255,255,0.3)',
+        }} />
+      </div>
+      <span style={{ fontSize:9, letterSpacing:'0.22em', color:'rgba(84,192,232,0.42)', fontWeight:600, fontFamily:MONO }}>CAM</span>
+    </div>
+  );
+
+  // ── action buttons ────────────────────────────────────────────────────────
+
+  const btns = (
     <>
-      <button onClick={() => handleAction('anim_minion_spawn')} style={buttonStyle('#FFD166', isLandscape)}>
-        Minion Spawn
-      </button>
-      <button onClick={() => handleAction('anim_next_round')} style={buttonStyle('#8BB7FF', isLandscape)}>
-        Next Round
-      </button>
-      <button onClick={() => handleAction('anim_player_spawn')} style={buttonStyle('#8BB7FF', isLandscape)}>
-        Player Spawn
-      </button>
-      <button onClick={() => handleAction('anim_spawn')} style={buttonStyle('#8BB7FF', isLandscape)}>
-        Raid Spawn
-      </button>
-      <button onClick={() => handleAction('anim_victory')} style={buttonStyle('#FFD166', isLandscape)}>
-        Victory
-      </button>
-      <button onClick={handleReset} style={buttonStyle('#FF9A9A', isLandscape)}>
-        Reset
-      </button>
+      <button onClick={() => handleAction('anim_spawn')}        style={btnStyle('#F5A800', isLandscape)}>SPAWN</button>
+      <button onClick={() => handleAction('anim_minion_spawn')} style={btnStyle('#54C0E8', isLandscape)}>MINION</button>
+      <button onClick={() => handleAction('anim_player_spawn')} style={btnStyle('#54C0E8', isLandscape)}>PLAYER</button>
+      <button onClick={() => handleAction('anim_next_round')}   style={btnStyle('#54C0E8', isLandscape)}>ROUND</button>
+      <button onClick={() => handleAction('anim_victory')}      style={btnStyle('#F5A800', isLandscape)}>VICTORY</button>
+      <button onClick={handleReset}                             style={btnStyle('#FF4455', isLandscape)}>RESET</button>
     </>
   );
 
+  // ── render ────────────────────────────────────────────────────────────────
+
   return (
-    <main
-      style={{
-        width: '100vw',
-        height: '100vh',
-        overflow: 'hidden',
-        touchAction: 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-        display: 'grid',
-        gridTemplateRows: isLandscape ? 'auto 1fr' : 'auto 1fr auto',
-        gap: isLandscape ? '0.34rem' : '0.45rem',
-        padding: isLandscape ? '0.44rem' : '0.6rem',
-        background: 'radial-gradient(circle at 20% 20%, #18243d 0%, #07090d 60%)',
-      }}
-    >
-      <header
-        className="glass-panel"
-        style={{
-          padding: isLandscape ? '0.42rem 0.52rem' : '0.52rem 0.62rem',
-          display: 'grid',
-          gap: isLandscape ? '0.18rem' : '0.24rem',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong style={{ letterSpacing: '0.04em', fontSize: isLandscape ? '0.86rem' : '1rem' }}>PHONE CONTROLLER</strong>
-          <span
-            style={{
-              color: statusColor(status),
-              fontSize: isLandscape ? '0.7rem' : '0.8rem',
-              border: `1px solid ${statusColor(status)}55`,
-              borderRadius: '999px',
-              padding: '0.18rem 0.55rem',
-            }}
-          >
-            {status.toUpperCase()}
+    <main style={{
+      width: '100svw',
+      height: '100svh',
+      overflow: 'hidden',
+      touchAction: 'none',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      display: 'flex',
+      flexDirection: 'column',
+      paddingTop:    'max(8px,  env(safe-area-inset-top))',
+      paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
+      paddingLeft:   'max(10px, env(safe-area-inset-left))',
+      paddingRight:  'max(10px, env(safe-area-inset-right))',
+      gap: isLandscape ? 5 : 7,
+      background: '#08090D',
+      fontFamily: MONO,
+    }}>
+
+      {/* ── status bar ── one compact line ────────────────────────────────── */}
+      <div style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'space-between', height: isLandscape ? 26 : 30 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:10, letterSpacing:'0.13em', color:'rgba(169,180,208,0.45)' }}>SESSION</span>
+          <span style={{ fontSize:14, letterSpacing:'0.18em', fontWeight:700, color:'#EAF0FF' }}>
+            {session || '——'}
           </span>
         </div>
-        <div style={{ fontSize: isLandscape ? '0.68rem' : '0.74rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
-          Session <strong style={{ color: 'var(--fg0)' }}>{session || '----'}</strong> | Client{' '}
-          <code>{clientIdRef.current}</code>
+        <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+          {errorLine && (
+            <span style={{ fontSize:9, color:'rgba(169,180,208,0.38)', letterSpacing:'0.04em', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {errorLine}
+            </span>
+          )}
+          <div style={{ width:6, height:6, borderRadius:'50%', background:sc, boxShadow:`0 0 7px ${sc}` }} />
+          <span style={{ fontSize:10, letterSpacing:'0.13em', color:sc }}>{statusLabel}</span>
         </div>
-        <div style={{ fontSize: isLandscape ? '0.67rem' : '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
-          Left stick: tank walk | Right stick: camera pan
-        </div>
-        <div style={{ fontSize: isLandscape ? '0.67rem' : '0.72rem', color: 'var(--fg1)', lineHeight: 1.2 }}>
-          Status {lastError ?? statusNote}
-        </div>
-        {!isLandscape && !useAbly && (
-          <div style={{ fontSize: '0.68rem', color: '#F7D154', lineHeight: 1.2 }}>
-            Requires Mac bridge process: `npm run bridge`
-          </div>
-        )}
-        {!isLandscape && deployWarning && (
-          <div style={{ fontSize: '0.68rem', color: '#FFB0B0', lineHeight: 1.2 }}>{deployWarning}</div>
-        )}
-      </header>
+      </div>
 
+      {/* ── main control area ─────────────────────────────────────────────── */}
       {isLandscape ? (
-        <section
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr)',
-            gap: '0.45rem',
-            alignItems: 'center',
-            minHeight: 0,
-          }}
-        >
-          <div style={{ display: 'grid', justifyItems: 'center', gap: '0.22rem' }}>
-            <div style={{ fontSize: '0.68rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move (Tank)</div>
-            <div
-              ref={movePadRef}
-              role="application"
-              aria-label="Move joystick"
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
-                moveDraggingRef.current = true;
-                updateMoveFromPointer(event.clientX, event.clientY);
-              }}
-              onPointerMove={(event) => {
-                if (!moveDraggingRef.current) return;
-                updateMoveFromPointer(event.clientX, event.clientY);
-              }}
-              onPointerUp={() => releaseMoveStick()}
-              onPointerCancel={() => releaseMoveStick()}
-              style={stickPadStyle('rgba(124,247,198,0.30)', 'rgba(124,247,198,0.24)', stickSize)}
-            >
-              <div
-                style={{
-                  ...stickKnobStyle,
-                  transform: `translate(calc(-50% + ${moveKnobTranslate.x}px), calc(-50% + ${moveKnobTranslate.y}px))`,
-                  background: 'linear-gradient(180deg, #8DFFD5 0%, #57D9A7 100%)',
-                }}
-              />
-            </div>
+        /* landscape: stick ── buttons ── stick */
+        <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'auto 1fr auto', gap:8, alignItems:'center' }}>
+          {moveStick}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:5, alignContent:'center' }}>
+            {btns}
           </div>
-
-          <div style={{ display: 'grid', justifyItems: 'center', gap: '0.22rem' }}>
-            <div style={{ fontSize: '0.68rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Camera</div>
-            <div
-              ref={aimPadRef}
-              role="application"
-              aria-label="Rotate joystick"
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
-                aimDraggingRef.current = true;
-                updateAimFromPointer(event.clientX, event.clientY);
-              }}
-              onPointerMove={(event) => {
-                if (!aimDraggingRef.current) return;
-                updateAimFromPointer(event.clientX, event.clientY);
-              }}
-              onPointerUp={() => releaseAimStick()}
-              onPointerCancel={() => releaseAimStick()}
-              style={stickPadStyle('rgba(139,183,255,0.34)', 'rgba(139,183,255,0.22)', stickSize)}
-            >
-              <div
-                style={{
-                  ...stickKnobStyle,
-                  transform: `translate(calc(-50% + ${aimKnobTranslate.x}px), calc(-50% + ${aimKnobTranslate.y}px))`,
-                  background: 'linear-gradient(180deg, #B8D2FF 0%, #7EA9F8 100%)',
-                }}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: '0.36rem',
-              alignContent: 'center',
-            }}
-          >
-            {actionButtons}
-          </div>
-        </section>
+          {aimStick}
+        </div>
       ) : (
+        /* portrait: sticks row ── buttons row */
         <>
-          <section
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: '0.45rem',
-              alignItems: 'center',
-              minHeight: 0,
-            }}
-          >
-            <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Move (Tank)</div>
-              <div
-                ref={movePadRef}
-                role="application"
-                aria-label="Move joystick"
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  moveDraggingRef.current = true;
-                  updateMoveFromPointer(event.clientX, event.clientY);
-                }}
-                onPointerMove={(event) => {
-                  if (!moveDraggingRef.current) return;
-                  updateMoveFromPointer(event.clientX, event.clientY);
-                }}
-                onPointerUp={() => releaseMoveStick()}
-                onPointerCancel={() => releaseMoveStick()}
-                style={stickPadStyle('rgba(124,247,198,0.30)', 'rgba(124,247,198,0.24)', stickSize)}
-              >
-                <div
-                  style={{
-                    ...stickKnobStyle,
-                    transform: `translate(calc(-50% + ${moveKnobTranslate.x}px), calc(-50% + ${moveKnobTranslate.y}px))`,
-                    background: 'linear-gradient(180deg, #8DFFD5 0%, #57D9A7 100%)',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', justifyItems: 'center', gap: '0.28rem' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>Camera</div>
-              <div
-                ref={aimPadRef}
-                role="application"
-                aria-label="Rotate joystick"
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  aimDraggingRef.current = true;
-                  updateAimFromPointer(event.clientX, event.clientY);
-                }}
-                onPointerMove={(event) => {
-                  if (!aimDraggingRef.current) return;
-                  updateAimFromPointer(event.clientX, event.clientY);
-                }}
-                onPointerUp={() => releaseAimStick()}
-                onPointerCancel={() => releaseAimStick()}
-                style={stickPadStyle('rgba(139,183,255,0.34)', 'rgba(139,183,255,0.22)', stickSize)}
-              >
-                <div
-                  style={{
-                    ...stickKnobStyle,
-                    transform: `translate(calc(-50% + ${aimKnobTranslate.x}px), calc(-50% + ${aimKnobTranslate.y}px))`,
-                    background: 'linear-gradient(180deg, #B8D2FF 0%, #7EA9F8 100%)',
-                  }}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: '0.42rem',
-            }}
-          >
-            {actionButtons}
-          </section>
+          <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, alignItems:'center', justifyItems:'center' }}>
+            {moveStick}
+            {aimStick}
+          </div>
+          <div style={{ flexShrink:0, display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:5 }}>
+            {btns}
+          </div>
         </>
       )}
+
     </main>
   );
-}
-
-function stickPadStyle(borderColor: string, glowColor: string, size: string): CSSProperties {
-  return {
-    width: size,
-    height: size,
-    borderRadius: '50%',
-    touchAction: 'none',
-    position: 'relative',
-    background:
-      `radial-gradient(circle at 35% 30%, ${glowColor}, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.02) 100%)`,
-    border: `1px solid ${borderColor}`,
-    boxShadow: 'inset 0 0 22px rgba(255,255,255,0.08), 0 8px 30px rgba(0,0,0,0.35)',
-  };
-}
-
-const stickKnobStyle: CSSProperties = {
-  position: 'absolute',
-  left: '50%',
-  top: '50%',
-  width: `${KNOB_SIZE}px`,
-  height: `${KNOB_SIZE}px`,
-  borderRadius: '50%',
-  border: '2px solid rgba(8, 20, 18, 0.45)',
-  boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
-};
-
-function buttonStyle(color: string, compact = false): CSSProperties {
-  return {
-    appearance: 'none',
-    border: `1px solid ${color}66`,
-    background: `${color}22`,
-    color,
-    borderRadius: 12,
-    minHeight: compact ? 'clamp(30px, 8dvh, 40px)' : 'clamp(36px, 5.2dvh, 46px)',
-    fontWeight: 700,
-    fontSize: compact ? '0.72rem' : '0.76rem',
-    letterSpacing: '0.02em',
-    touchAction: 'none',
-  };
 }
