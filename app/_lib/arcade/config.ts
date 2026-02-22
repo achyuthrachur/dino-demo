@@ -17,8 +17,8 @@ export interface ArcadeConfig {
 }
 
 export const ARCADE_CONFIG: ArcadeConfig = {
-  joystickHz: 25,
-  joystickIntervalMs: 40,
+  joystickHz: 40,
+  joystickIntervalMs: 25,
   reconnectBaseMs: 500,
   reconnectMaxMs: 5000,
   heartbeatMs: 5000,

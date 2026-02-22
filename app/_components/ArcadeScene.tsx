@@ -8,8 +8,8 @@ import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/con
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const TERRAIN_GLB_PATH = '/models/environments/haytor_dartmoor_terrain.glb';
-const TERRAIN_SCALE = 0.35;
-const FADE_SECONDS = 0.2;
+const TERRAIN_SCALE = 0.25;
+const FADE_SECONDS = 0.24;
 const WALK_METERS_PER_SECOND = 3.2;
 const TURN_RADIANS_PER_SECOND = 1.8;
 const ARENA_RADIUS = 18;
@@ -19,16 +19,24 @@ const GROUND_RAYCAST_HZ = 30;
 const GROUND_RAYCAST_MAX_DISTANCE = 400;
 const GROUND_RAYCAST_TOP_PADDING = 20;
 const GROUND_Y_SMOOTHING_PER_SECOND = 14;
-const CAMERA_YAW_RADIANS_PER_SECOND = 2.15;
-const CAMERA_PITCH_RADIANS_PER_SECOND = 2.25;
+const MOVE_TURN_DEADZONE = 0.22;
+const MOVE_TURN_SUPPRESS_THRESHOLD = 0.32;
+const MOVE_THROTTLE_SUPPRESS_THRESHOLD = 0.35;
+const TURN_INPUT_SMOOTHING_PER_SECOND = 12;
+const THROTTLE_INPUT_SMOOTHING_PER_SECOND = 10;
+const WALK_LOOP_SPEED_THRESHOLD = 0.08;
+const CAMERA_YAW_RADIANS_PER_SECOND = 1.45;
+const CAMERA_PITCH_RADIANS_PER_SECOND = 1.9;
 const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
 const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(28);
 const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
 const CAMERA_DISTANCE_MULTIPLIER = 2.08;
 const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
 const CAMERA_POSITION_SMOOTHING_PER_SECOND = 10;
-const CAMERA_INPUT_SMOOTHING_PER_SECOND = 13;
-const CAMERA_STICK_DEADZONE = 0.02;
+const CAMERA_INPUT_SMOOTHING_PER_SECOND = 10;
+const CAMERA_STICK_DEADZONE = 0.01;
+const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(2.4);
+const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.9);
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -226,6 +234,11 @@ function getTrackNodeName(trackName: string): string {
   return dotIndex >= 0 ? trackName.slice(0, dotIndex) : trackName;
 }
 
+function shapeCameraStick(value: number): number {
+  if (value === 0) return 0;
+  return Math.sign(value) * Math.sqrt(Math.abs(value));
+}
+
 function buildRestPositionMap(root: THREE.Object3D): Map<string, THREE.Vector3> {
   const map = new Map<string, THREE.Vector3>();
   root.traverse((object) => {
@@ -296,6 +309,21 @@ function findRootMotionTrack(clip: THREE.AnimationClip): THREE.VectorKeyframeTra
   return fallback ?? positionTracks[0];
 }
 
+function freezeQuaternionTrack(track: THREE.QuaternionKeyframeTrack): THREE.KeyframeTrack {
+  const values = track.values.slice();
+  const x0 = values[0] ?? 0;
+  const y0 = values[1] ?? 0;
+  const z0 = values[2] ?? 0;
+  const w0 = values[3] ?? 1;
+  for (let i = 0; i < values.length; i += 4) {
+    values[i] = x0;
+    values[i + 1] = y0;
+    values[i + 2] = z0;
+    values[i + 3] = w0;
+  }
+  return new THREE.QuaternionKeyframeTrack(track.name, track.times.slice(), values, track.getInterpolation());
+}
+
 function neutralizeTrackRootMotion(
   track: THREE.VectorKeyframeTrack,
   restPositionsByNodeName: Map<string, THREE.Vector3>,
@@ -353,10 +381,14 @@ function prepareAnimationsForArcade(
     if (!rootMotionTrack) {
       return cloned;
     }
+    const rootTrackNodeName = getTrackNodeName(rootMotionTrack.name).toLowerCase();
     cloned.tracks = cloned.tracks.map((track) =>
       track instanceof THREE.VectorKeyframeTrack
         ? neutralizeTrackRootMotion(track, restPositionsByNodeName, rootMotionTrack)
-        : track.clone(),
+        : track instanceof THREE.QuaternionKeyframeTrack &&
+            getTrackNodeName(track.name).toLowerCase() === rootTrackNodeName
+          ? freezeQuaternionTrack(track)
+          : track.clone(),
     );
     return cloned;
   });
@@ -364,12 +396,19 @@ function prepareAnimationsForArcade(
 
 interface RexyArcadeModelProps {
   walkLoopEnabled: boolean;
+  walkDirection: number;
   animationCue: ArcadeAnimCue | null;
   resetToken: number;
   onBoundsRadiusChange?: (radius: number) => void;
 }
 
-function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRadiusChange }: RexyArcadeModelProps) {
+function RexyArcadeModel({
+  walkLoopEnabled,
+  walkDirection,
+  animationCue,
+  resetToken,
+  onBoundsRadiusChange,
+}: RexyArcadeModelProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene, animations } = useGLTF(GLB_PATH);
   const restPositionsByNodeName = useMemo(() => buildRestPositionMap(scene), [scene]);
@@ -390,15 +429,18 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
   const sequenceTimersRef = useRef<number[]>([]);
   const sequenceTokenRef = useRef(0);
   const sequenceActiveRef = useRef(false);
-  const walkCycleTimersRef = useRef<number[]>([]);
-  const walkCycleTokenRef = useRef(0);
   const walkCycleActiveRef = useRef(false);
   const walkLoopEnabledRef = useRef(walkLoopEnabled);
+  const walkDirectionRef = useRef(walkDirection);
   const clipSetRef = useRef(clipSet);
 
   useEffect(() => {
     walkLoopEnabledRef.current = walkLoopEnabled;
   }, [walkLoopEnabled]);
+
+  useEffect(() => {
+    walkDirectionRef.current = walkDirection;
+  }, [walkDirection]);
 
   useEffect(() => {
     clipSetRef.current = clipSet;
@@ -430,11 +472,6 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
   const clearSequenceTimers = useCallback(() => {
     sequenceTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     sequenceTimersRef.current = [];
-  }, []);
-
-  const clearWalkCycleTimers = useCallback(() => {
-    walkCycleTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    walkCycleTimersRef.current = [];
   }, []);
 
   const playClip = useCallback(
@@ -474,58 +511,40 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
   );
 
   const stopWalkCycle = useCallback(() => {
-    walkCycleTokenRef.current += 1;
     walkCycleActiveRef.current = false;
-    clearWalkCycleTimers();
-  }, [clearWalkCycleTimers]);
+  }, []);
+
+  const resolveWalkClipName = useCallback((activeClipSet: ClipSet): string | null => {
+    const preferredClip = walkDirectionRef.current < 0 ? activeClipSet.minionSpawn : activeClipSet.spawn;
+    const fallbackClip = walkDirectionRef.current < 0 ? activeClipSet.spawn : activeClipSet.minionSpawn;
+    return preferredClip ?? fallbackClip;
+  }, []);
 
   const startWalkCycle = useCallback(() => {
     const activeClipSet = clipSetRef.current;
-    const cycleClips = [activeClipSet.minionSpawn, activeClipSet.spawn].filter(
-      (clipName): clipName is string => Boolean(clipName),
-    );
-    if (cycleClips.length === 0) {
+    const walkClip = resolveWalkClipName(activeClipSet);
+    if (!walkClip) {
       playClip(activeClipSet.idleFallback, true);
       return;
     }
 
-    stopWalkCycle();
-    const token = walkCycleTokenRef.current;
     walkCycleActiveRef.current = true;
-
-    const overlapMs = FADE_SECONDS * 550;
-    let elapsedMs = 0;
-    for (const clipName of cycleClips) {
-      const startMs = elapsedMs;
-      walkCycleTimersRef.current.push(
-        window.setTimeout(() => {
-          if (walkCycleTokenRef.current !== token) return;
-          playClip(clipName, false);
-        }, startMs),
-      );
-      const durationMs = Math.max(120, (clipDurations.get(clipName) ?? 0.8) * 1000);
-      elapsedMs += Math.max(120, durationMs - overlapMs);
-    }
-
-    walkCycleTimersRef.current.push(
-      window.setTimeout(() => {
-        if (walkCycleTokenRef.current !== token) return;
-        walkCycleActiveRef.current = false;
-        if (walkLoopEnabledRef.current && !sequenceActiveRef.current) {
-          startWalkCycle();
-          return;
-        }
-        playClip(activeClipSet.idleFallback, true);
-      }, elapsedMs + 40),
-    );
-  }, [clipDurations, playClip, stopWalkCycle]);
+    playClip(walkClip, true);
+  }, [playClip, resolveWalkClipName]);
 
   const syncBaseline = useCallback(() => {
     if (sequenceActiveRef.current) return;
     const activeClipSet = clipSetRef.current;
 
     if (walkLoopEnabledRef.current) {
-      if (!walkCycleActiveRef.current) {
+      const walkClip = resolveWalkClipName(activeClipSet);
+      const currentClipName = currentActionRef.current?.getClip().name ?? null;
+      if (!walkClip) {
+        stopWalkCycle();
+        playClip(activeClipSet.idleFallback, true);
+        return;
+      }
+      if (!walkCycleActiveRef.current || currentClipName !== walkClip) {
         startWalkCycle();
       }
       return;
@@ -533,7 +552,7 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
 
     stopWalkCycle();
     playClip(activeClipSet.idleFallback, true);
-  }, [playClip, startWalkCycle, stopWalkCycle]);
+  }, [playClip, resolveWalkClipName, startWalkCycle, stopWalkCycle]);
 
   const runSequence = useCallback(
     (clips: Array<string | null>) => {
@@ -577,7 +596,7 @@ function RexyArcadeModel({ walkLoopEnabled, animationCue, resetToken, onBoundsRa
 
   useEffect(() => {
     syncBaseline();
-  }, [clipSet, syncBaseline, walkLoopEnabled]);
+  }, [clipSet, syncBaseline, walkDirection, walkLoopEnabled]);
 
   useEffect(() => {
     if (!animationCue) return;
@@ -662,9 +681,13 @@ function ArcadeRig({
   onModelRadiusChange,
 }: ArcadeRigProps) {
   const [walkLoopEnabled, setWalkLoopEnabled] = useState(false);
+  const [walkDirection, setWalkDirection] = useState(1);
   const walkLoopEnabledRef = useRef(false);
+  const walkDirectionRef = useRef(1);
   const headingYawRef = useRef(0);
   const bodyYawRef = useRef(0);
+  const smoothedTurnInputRef = useRef(0);
+  const smoothedThrottleInputRef = useRef(0);
   const forwardDirectionRef = useRef(new THREE.Vector3());
   const targetVelocityRef = useRef(new THREE.Vector3());
   const velocityRef = useRef(new THREE.Vector3());
@@ -745,9 +768,13 @@ function ArcadeRig({
 
   useEffect(() => {
     walkLoopEnabledRef.current = false;
+    walkDirectionRef.current = 1;
     setWalkLoopEnabled(false);
+    setWalkDirection(1);
     headingYawRef.current = 0;
     bodyYawRef.current = 0;
+    smoothedTurnInputRef.current = 0;
+    smoothedThrottleInputRef.current = 0;
     targetVelocityRef.current.set(0, 0, 0);
     velocityRef.current.set(0, 0, 0);
     raycastAccumulatorRef.current = 1 / GROUND_RAYCAST_HZ;
@@ -765,21 +792,48 @@ function ArcadeRig({
     if (!group) return;
 
     const move = moveRef.current;
-    const turnInput = applyDeadzone(move.x, ARCADE_CONFIG.deadzone);
-    const throttleInput = applyDeadzone(move.y, ARCADE_CONFIG.deadzone);
-    headingYawRef.current += turnInput * TURN_RADIANS_PER_SECOND * delta;
+    const rawTurnInput = applyDeadzone(move.x, MOVE_TURN_DEADZONE);
+    const rawThrottleInput = applyDeadzone(move.y, ARCADE_CONFIG.deadzone);
+    const suppressedTurnInput =
+      Math.abs(rawThrottleInput) > MOVE_THROTTLE_SUPPRESS_THRESHOLD &&
+      Math.abs(rawTurnInput) < MOVE_TURN_SUPPRESS_THRESHOLD
+        ? 0
+        : rawTurnInput;
+
+    smoothedTurnInputRef.current = THREE.MathUtils.damp(
+      smoothedTurnInputRef.current,
+      suppressedTurnInput,
+      TURN_INPUT_SMOOTHING_PER_SECOND,
+      delta,
+    );
+    smoothedThrottleInputRef.current = THREE.MathUtils.damp(
+      smoothedThrottleInputRef.current,
+      rawThrottleInput,
+      THROTTLE_INPUT_SMOOTHING_PER_SECOND,
+      delta,
+    );
+
+    headingYawRef.current += smoothedTurnInputRef.current * TURN_RADIANS_PER_SECOND * delta;
     bodyYawRef.current = THREE.MathUtils.damp(bodyYawRef.current, headingYawRef.current, 9, delta);
     group.rotation.y = bodyYawRef.current;
 
-    const shouldWalkLoop = Math.abs(throttleInput) > 0.001;
+    const shouldWalkLoop = Math.abs(smoothedThrottleInputRef.current) > WALK_LOOP_SPEED_THRESHOLD;
     if (shouldWalkLoop !== walkLoopEnabledRef.current) {
       walkLoopEnabledRef.current = shouldWalkLoop;
       setWalkLoopEnabled(shouldWalkLoop);
     }
 
-    if (Math.abs(throttleInput) > 0.001) {
+    const desiredDirection = smoothedThrottleInputRef.current < 0 ? -1 : 1;
+    if (desiredDirection !== walkDirectionRef.current) {
+      walkDirectionRef.current = desiredDirection;
+      setWalkDirection(desiredDirection);
+    }
+
+    if (Math.abs(smoothedThrottleInputRef.current) > 0.001) {
       forwardDirectionRef.current.set(Math.sin(group.rotation.y), 0, Math.cos(group.rotation.y));
-      targetVelocityRef.current.copy(forwardDirectionRef.current).multiplyScalar(throttleInput * WALK_METERS_PER_SECOND);
+      targetVelocityRef.current
+        .copy(forwardDirectionRef.current)
+        .multiplyScalar(smoothedThrottleInputRef.current * WALK_METERS_PER_SECOND);
     } else {
       targetVelocityRef.current.set(0, 0, 0);
     }
@@ -826,6 +880,7 @@ function ArcadeRig({
     <group ref={actorRef}>
       <RexyArcadeModel
         walkLoopEnabled={walkLoopEnabled}
+        walkDirection={walkDirection}
         animationCue={animationCue}
         resetToken={resetToken}
         onBoundsRadiusChange={onModelRadiusChange}
@@ -870,8 +925,8 @@ function ArcadeFollowCamera({ actorRef, aimRef, radius, resetToken }: ArcadeFoll
   }, [camera, radius, resetToken]);
 
   useFrame((_, delta) => {
-    const cameraInputX = applyDeadzone(aimRef.current.x, CAMERA_STICK_DEADZONE);
-    const cameraInputY = applyDeadzone(aimRef.current.y, CAMERA_STICK_DEADZONE);
+    const cameraInputX = shapeCameraStick(applyDeadzone(aimRef.current.x, CAMERA_STICK_DEADZONE));
+    const cameraInputY = shapeCameraStick(applyDeadzone(aimRef.current.y, CAMERA_STICK_DEADZONE));
     smoothedInputXRef.current = THREE.MathUtils.damp(
       smoothedInputXRef.current,
       cameraInputX,
@@ -884,9 +939,20 @@ function ArcadeFollowCamera({ actorRef, aimRef, radius, resetToken }: ArcadeFoll
       CAMERA_INPUT_SMOOTHING_PER_SECOND,
       delta,
     );
-    yawRef.current += smoothedInputXRef.current * CAMERA_YAW_RADIANS_PER_SECOND * delta;
+    const yawStep = THREE.MathUtils.clamp(
+      smoothedInputXRef.current * CAMERA_YAW_RADIANS_PER_SECOND * delta,
+      -CAMERA_MAX_YAW_STEP_RADIANS,
+      CAMERA_MAX_YAW_STEP_RADIANS,
+    );
+    const pitchStep = THREE.MathUtils.clamp(
+      smoothedInputYRef.current * CAMERA_PITCH_RADIANS_PER_SECOND * delta,
+      -CAMERA_MAX_PITCH_STEP_RADIANS,
+      CAMERA_MAX_PITCH_STEP_RADIANS,
+    );
+
+    yawRef.current += yawStep;
     pitchRef.current = THREE.MathUtils.clamp(
-      pitchRef.current + smoothedInputYRef.current * CAMERA_PITCH_RADIANS_PER_SECOND * delta,
+      pitchRef.current + pitchStep,
       CAMERA_MIN_PITCH_RADIANS,
       CAMERA_MAX_PITCH_RADIANS,
     );
