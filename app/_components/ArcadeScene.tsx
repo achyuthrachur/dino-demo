@@ -8,7 +8,7 @@ import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/con
 
 const GLB_PATH = '/models/rexy/rexy_jurassic_world_alive.glb';
 const TERRAIN_GLB_PATH = '/models/environments/haytor_dartmoor_terrain.glb';
-const TERRAIN_SCALE = 0.25;
+const TERRAIN_SCALE = 0.2;
 const FADE_SECONDS = 0.24;
 const WALK_METERS_PER_SECOND = 3.2;
 const TURN_RADIANS_PER_SECOND = 1.8;
@@ -25,18 +25,18 @@ const MOVE_THROTTLE_SUPPRESS_THRESHOLD = 0.35;
 const TURN_INPUT_SMOOTHING_PER_SECOND = 12;
 const THROTTLE_INPUT_SMOOTHING_PER_SECOND = 10;
 const WALK_LOOP_SPEED_THRESHOLD = 0.08;
-const CAMERA_YAW_RADIANS_PER_SECOND = 1.45;
-const CAMERA_PITCH_RADIANS_PER_SECOND = 1.9;
+const CAMERA_YAW_RADIANS_PER_SECOND = 1.2;
+const CAMERA_PITCH_RADIANS_PER_SECOND = 1.6;
 const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
 const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(28);
 const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
 const CAMERA_DISTANCE_MULTIPLIER = 2.08;
 const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
 const CAMERA_POSITION_SMOOTHING_PER_SECOND = 10;
-const CAMERA_INPUT_SMOOTHING_PER_SECOND = 10;
-const CAMERA_STICK_DEADZONE = 0.01;
-const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(2.4);
-const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.9);
+const CAMERA_INPUT_SMOOTHING_PER_SECOND = 8;
+const CAMERA_STICK_DEADZONE = 0.015;
+const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(1.4);
+const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(1.1);
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -236,7 +236,7 @@ function getTrackNodeName(trackName: string): string {
 
 function shapeCameraStick(value: number): number {
   if (value === 0) return 0;
-  return Math.sign(value) * Math.sqrt(Math.abs(value));
+  return Math.sign(value) * Math.pow(Math.abs(value), 1.6);
 }
 
 function buildRestPositionMap(root: THREE.Object3D): Map<string, THREE.Vector3> {
@@ -425,6 +425,7 @@ function RexyArcadeModel({
   );
 
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
+  const currentActionLoopRef = useRef(false);
   const fadeStopTimerRef = useRef<number | null>(null);
   const sequenceTimersRef = useRef<number[]>([]);
   const sequenceTokenRef = useRef(0);
@@ -483,6 +484,13 @@ function RexyArcadeModel({
       clearFadeStopTimer();
 
       const previousAction = currentActionRef.current;
+      const sameAction = previousAction === nextAction;
+      const alreadyRunning = nextAction.isRunning();
+
+      if (sameAction && loop && alreadyRunning && currentActionLoopRef.current) {
+        return nextAction;
+      }
+
       nextAction.enabled = true;
       nextAction.setEffectiveWeight(1);
       nextAction.setEffectiveTimeScale(1);
@@ -505,6 +513,7 @@ function RexyArcadeModel({
       }
 
       currentActionRef.current = nextAction;
+      currentActionLoopRef.current = loop;
       return nextAction;
     },
     [actions, clearFadeStopTimer],
@@ -539,12 +548,13 @@ function RexyArcadeModel({
     if (walkLoopEnabledRef.current) {
       const walkClip = resolveWalkClipName(activeClipSet);
       const currentClipName = currentActionRef.current?.getClip().name ?? null;
+      const isCurrentActionRunning = currentActionRef.current?.isRunning() ?? false;
       if (!walkClip) {
         stopWalkCycle();
         playClip(activeClipSet.idleFallback, true);
         return;
       }
-      if (!walkCycleActiveRef.current || currentClipName !== walkClip) {
+      if (!walkCycleActiveRef.current || currentClipName !== walkClip || !isCurrentActionRunning) {
         startWalkCycle();
       }
       return;
@@ -648,6 +658,7 @@ function RexyArcadeModel({
       action?.stop();
     });
     currentActionRef.current = null;
+    currentActionLoopRef.current = false;
     syncBaseline();
   }, [actions, clearFadeStopTimer, clearSequenceTimers, resetToken, stopWalkCycle, syncBaseline]);
 
@@ -659,8 +670,18 @@ function RexyArcadeModel({
       clearFadeStopTimer();
       Object.values(actions).forEach((action) => action?.stop());
       currentActionRef.current = null;
+      currentActionLoopRef.current = false;
     };
   }, [actions, clearFadeStopTimer, clearSequenceTimers, stopWalkCycle]);
+
+  useFrame(() => {
+    if (sequenceActiveRef.current) return;
+    if (!walkLoopEnabledRef.current) return;
+    const activeAction = currentActionRef.current;
+    if (!activeAction || !activeAction.isRunning()) {
+      startWalkCycle();
+    }
+  });
 
   return (
     <group ref={groupRef}>
@@ -823,10 +844,12 @@ function ArcadeRig({
       setWalkLoopEnabled(shouldWalkLoop);
     }
 
-    const desiredDirection = smoothedThrottleInputRef.current < 0 ? -1 : 1;
-    if (desiredDirection !== walkDirectionRef.current) {
-      walkDirectionRef.current = desiredDirection;
-      setWalkDirection(desiredDirection);
+    if (Math.abs(smoothedThrottleInputRef.current) > WALK_LOOP_SPEED_THRESHOLD) {
+      const desiredDirection = smoothedThrottleInputRef.current < 0 ? -1 : 1;
+      if (desiredDirection !== walkDirectionRef.current) {
+        walkDirectionRef.current = desiredDirection;
+        setWalkDirection(desiredDirection);
+      }
     }
 
     if (Math.abs(smoothedThrottleInputRef.current) > 0.001) {
