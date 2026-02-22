@@ -2,7 +2,21 @@ import { clamp, type JoyVector } from './config';
 
 export type ClientRole = 'mac' | 'phone';
 
-export type ArcadeAction = 'walk_toggle' | 'roar' | 'mode_toggle' | 'reset_pose';
+export type ArcadeAction =
+  | 'walk_toggle'
+  | 'roar'
+  | 'mode_toggle'
+  | 'reset_pose'
+  | 'walk_forward'
+  | 'walk_reverse'
+  | 'rotate_left'
+  | 'rotate_right'
+  | 'rotate_off'
+  | 'anim_minion_spawn'
+  | 'anim_next_round'
+  | 'anim_player_spawn'
+  | 'anim_spawn'
+  | 'anim_victory';
 
 export type ClientHello = {
   type: 'hello';
@@ -68,7 +82,22 @@ export type WireMessage =
   | ClientPing
   | ServerMessage;
 
-const ACTIONS: ReadonlyArray<ArcadeAction> = ['walk_toggle', 'roar', 'mode_toggle', 'reset_pose'];
+const ACTIONS: ReadonlyArray<ArcadeAction> = [
+  'walk_toggle',
+  'roar',
+  'mode_toggle',
+  'reset_pose',
+  'walk_forward',
+  'walk_reverse',
+  'rotate_left',
+  'rotate_right',
+  'rotate_off',
+  'anim_minion_spawn',
+  'anim_next_round',
+  'anim_player_spawn',
+  'anim_spawn',
+  'anim_victory',
+];
 const ROLES: ReadonlyArray<ClientRole> = ['mac', 'phone'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
-import { ArcadeScene } from '@/app/_components/ArcadeScene';
+import {
+  ArcadeScene,
+  type ArcadeAnimCueKind,
+  type RotationMode,
+  type WalkDirection,
+} from '@/app/_components/ArcadeScene';
 import { ARCADE_CONFIG, type JoyVector } from '@/app/_lib/arcade/config';
 import { isControllerAction, isControllerState, type WireMessage } from '@/app/_lib/arcade/protocol';
 import {
@@ -14,7 +19,6 @@ import {
 } from '@/app/_lib/arcade/session';
 import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
-import { useStore } from '@/app/_lib/store';
 
 function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
   if (status === 'connected') return '#7CF7C6';
@@ -34,20 +38,26 @@ export default function ArcadePage() {
   const [lanWarning, setLanWarning] = useState<string | null>(null);
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [panelHidden, setPanelHidden] = useState(false);
+  const [walkEnabled, setWalkEnabled] = useState(false);
+  const [walkDirection, setWalkDirection] = useState<WalkDirection>('forward');
+  const [rotationMode, setRotationMode] = useState<RotationMode>('off');
+  const [animationCue, setAnimationCue] = useState<{ kind: ArcadeAnimCueKind; nonce: number } | null>(
+    null,
+  );
 
   const joyRef = useRef<JoyVector>({ x: 0, y: 0 });
   const clientIdRef = useRef(createClientId('mac'));
+  const cueNonceRef = useRef(1);
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
   const useAbly = Boolean(ablyKey);
 
-  const mode = useStore((s) => s.mode);
-  const walkLoopEnabled = useStore((s) => s.walkLoopEnabled);
-  const audioUnlocked = useStore((s) => s.audioUnlocked);
-  const triggerRoar = useStore((s) => s.triggerRoar);
-  const requestMode = useStore((s) => s.requestMode);
-  const toggleWalkLoop = useStore((s) => s.toggleWalkLoop);
-  const setWalkLoopEnabled = useStore((s) => s.setWalkLoopEnabled);
-  const requestAudioUnlock = useStore((s) => s.requestAudioUnlock);
+  const triggerAnimation = useCallback((kind: ArcadeAnimCueKind) => {
+    setAnimationCue({
+      kind,
+      nonce: cueNonceRef.current++,
+    });
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -135,21 +145,53 @@ export default function ArcadePage() {
 
       switch (message.action) {
         case 'walk_toggle':
-          toggleWalkLoop();
+          setWalkEnabled((previous) => !previous);
+          break;
+        case 'walk_forward':
+          setWalkDirection('forward');
+          break;
+        case 'walk_reverse':
+          setWalkDirection('reverse');
+          break;
+        case 'rotate_left':
+          setRotationMode('left');
+          break;
+        case 'rotate_right':
+          setRotationMode('right');
+          break;
+        case 'rotate_off':
+          setRotationMode('off');
+          break;
+        case 'anim_minion_spawn':
+          triggerAnimation('minion_spawn');
+          break;
+        case 'anim_next_round':
+          triggerAnimation('next_round');
+          break;
+        case 'anim_player_spawn':
+          triggerAnimation('player_spawn');
+          break;
+        case 'anim_spawn':
+          triggerAnimation('spawn');
+          break;
+        case 'anim_victory':
+          triggerAnimation('victory');
           break;
         case 'roar':
-          triggerRoar();
+          triggerAnimation('spawn');
           break;
-        case 'mode_toggle': {
-          const current = useStore.getState().mode;
-          requestMode(current === 'skin' ? 'skeleton' : 'skin');
+        case 'mode_toggle':
+          triggerAnimation('next_round');
           break;
-        }
-        case 'reset_pose':
+        case 'reset_pose': {
           joyRef.current = { x: 0, y: 0 };
-          setWalkLoopEnabled(false);
+          setWalkEnabled(false);
+          setWalkDirection('forward');
+          setRotationMode('off');
+          setAnimationCue(null);
           setResetToken((prev) => prev + 1);
           break;
+        }
         default:
           break;
       }
@@ -162,7 +204,7 @@ export default function ArcadePage() {
         setActiveControllerId(message.activeControllerId);
       }
     }
-  }, [requestMode, session, setWalkLoopEnabled, toggleWalkLoop, triggerRoar]);
+  }, [session, triggerAnimation]);
 
   const socketTransport = useSessionSocket({
     enabled: !useAbly,
@@ -195,6 +237,20 @@ export default function ArcadePage() {
     return new Date(lastInputAt).toLocaleTimeString();
   }, [lastInputAt]);
 
+  const controllerActive = status === 'connected' && Boolean(activeControllerId) && !staleInput;
+
+  useEffect(() => {
+    if (controllerActive) {
+      setPanelHidden(true);
+    }
+  }, [controllerActive]);
+
+  useEffect(() => {
+    if (status !== 'connected') {
+      setPanelHidden(false);
+    }
+  }, [status]);
+
   const handleCopyUrl = useCallback(async () => {
     if (!controllerUrl) return;
     try {
@@ -207,122 +263,140 @@ export default function ArcadePage() {
 
   return (
     <main style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
-      <ArcadeScene joyRef={joyRef} resetToken={resetToken} />
+      <ArcadeScene
+        joyRef={joyRef}
+        resetToken={resetToken}
+        walkEnabled={walkEnabled}
+        walkDirection={walkDirection}
+        rotationMode={rotationMode}
+        animationCue={animationCue}
+      />
 
-      <section
-        className="glass-panel"
-        style={{
-          position: 'fixed',
-          top: '1rem',
-          left: '1rem',
-          zIndex: 20,
-          width: 'min(480px, calc(100vw - 2rem))',
-          display: 'grid',
-          gap: '0.65rem',
-          padding: '1rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-          <strong style={{ fontSize: '0.95rem', letterSpacing: '0.04em' }}>ARCADE MODE</strong>
-          <span
-            style={{
-              fontSize: '0.8rem',
-              color: statusColor(status),
-              border: `1px solid ${statusColor(status)}55`,
-              borderRadius: '999px',
-              padding: '0.2rem 0.55rem',
-            }}
-          >
-            {status.toUpperCase()}
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gap: '0.35rem', color: 'var(--fg1)', fontSize: '0.83rem' }}>
-          <div>Session: <strong style={{ color: 'var(--fg0)' }}>{session || '----'}</strong></div>
-          <div>Transport: <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code></div>
-          <div>Bridge: <code>{bridgeUrl || 'ws://<host>:8787'}</code></div>
-          <div>Controller: <code style={{ wordBreak: 'break-all' }}>{controllerUrl || '(loading...)'}</code></div>
-          <div>Mode: <strong style={{ color: 'var(--fg0)' }}>{mode}</strong></div>
-          <div>Walk Loop: <strong style={{ color: walkLoopEnabled ? '#7CF7C6' : 'var(--fg0)' }}>{walkLoopEnabled ? 'ON' : 'OFF'}</strong></div>
-          <div>Audio: <strong style={{ color: audioUnlocked ? '#7CF7C6' : '#F7D154' }}>{audioUnlocked ? 'Unlocked' : 'Locked'}</strong></div>
-          <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
-          <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
-          <div>Status: <span>{lastError ?? statusNote}</span></div>
-          {!useAbly && <div style={{ color: '#F7D154' }}>Bridge process required on Mac: `npm run bridge`</div>}
-          {deployWarning && <div style={{ color: '#FFB0B0' }}>{deployWarning}</div>}
-          {lanWarning && <div style={{ color: '#F7D154' }}>{lanWarning}</div>}
-        </div>
-
-        {qrDataUrl && (
-          <div style={{ display: 'grid', justifyItems: 'start', gap: '0.35rem' }}>
-            <div style={{ fontSize: '0.78rem', color: 'var(--fg1)' }}>
-              Scan with iPhone camera:
-            </div>
-            <img
-              src={qrDataUrl}
-              alt="Controller URL QR code"
-              width={160}
-              height={160}
+      {!panelHidden && (
+        <section
+          className="glass-panel"
+          style={{
+            position: 'fixed',
+            top: '1rem',
+            left: '1rem',
+            zIndex: 20,
+            width: 'min(480px, calc(100vw - 2rem))',
+            display: 'grid',
+            gap: '0.65rem',
+            padding: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <strong style={{ fontSize: '0.95rem', letterSpacing: '0.04em' }}>ARCADE MODE</strong>
+            <span
               style={{
-                width: 160,
-                height: 160,
-                borderRadius: 8,
-                border: '1px solid rgba(255,255,255,0.24)',
-                background: 'rgba(255,255,255,0.03)',
+                fontSize: '0.8rem',
+                color: statusColor(status),
+                border: `1px solid ${statusColor(status)}55`,
+                borderRadius: '999px',
+                padding: '0.2rem 0.55rem',
               }}
-            />
+            >
+              {status.toUpperCase()}
+            </span>
           </div>
-        )}
 
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={requestAudioUnlock}
-            style={{
-              border: '1px solid rgba(124,247,198,0.45)',
-              background: 'rgba(124,247,198,0.12)',
-              color: 'var(--accent)',
-              borderRadius: 8,
-              padding: '0.45rem 0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Enable Audio
-          </button>
-          <button
-            onClick={handleCopyUrl}
-            style={{
-              border: '1px solid rgba(255,255,255,0.2)',
-              background: 'rgba(255,255,255,0.07)',
-              color: 'var(--fg0)',
-              borderRadius: 8,
-              padding: '0.45rem 0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Copy Controller URL
-          </button>
-          <button
-            onClick={() => {
-              joyRef.current = { x: 0, y: 0 };
-              setWalkLoopEnabled(false);
-              setResetToken((prev) => prev + 1);
-            }}
-            style={{
-              border: '1px solid rgba(255,120,120,0.4)',
-              background: 'rgba(255,120,120,0.1)',
-              color: '#FF9A9A',
-              borderRadius: 8,
-              padding: '0.45rem 0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Reset Pose
-          </button>
-        </div>
-      </section>
+          <div style={{ display: 'grid', gap: '0.35rem', color: 'var(--fg1)', fontSize: '0.83rem' }}>
+            <div>Session: <strong style={{ color: 'var(--fg0)' }}>{session || '----'}</strong></div>
+            <div>Transport: <code>{useAbly ? 'ably-realtime' : 'local-websocket'}</code></div>
+            <div>Bridge: <code>{bridgeUrl || 'ws://<host>:8787'}</code></div>
+            <div>Controller: <code style={{ wordBreak: 'break-all' }}>{controllerUrl || '(loading...)'}</code></div>
+            <div>Walk: <strong style={{ color: walkEnabled ? '#7CF7C6' : 'var(--fg0)' }}>{walkEnabled ? 'ON' : 'OFF'}</strong></div>
+            <div>Direction: <strong style={{ color: 'var(--fg0)' }}>{walkDirection}</strong></div>
+            <div>Rotation: <strong style={{ color: 'var(--fg0)' }}>{rotationMode}</strong></div>
+            <div>Active Controller: <strong style={{ color: 'var(--fg0)' }}>{activeControllerId ?? 'none'}</strong></div>
+            <div>Last Input: <strong style={{ color: staleInput ? '#F7D154' : 'var(--fg0)' }}>{formattedLastInput}</strong></div>
+            <div>Status: <span>{lastError ?? statusNote}</span></div>
+            {!useAbly && <div style={{ color: '#F7D154' }}>Bridge process required on Mac: `npm run bridge`</div>}
+            {deployWarning && <div style={{ color: '#FFB0B0' }}>{deployWarning}</div>}
+            {lanWarning && <div style={{ color: '#F7D154' }}>{lanWarning}</div>}
+          </div>
+
+          {qrDataUrl && (
+            <div style={{ display: 'grid', justifyItems: 'start', gap: '0.35rem' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--fg1)' }}>
+                Scan with iPhone camera:
+              </div>
+              <img
+                src={qrDataUrl}
+                alt="Controller URL QR code"
+                width={160}
+                height={160}
+                style={{
+                  width: 160,
+                  height: 160,
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.24)',
+                  background: 'rgba(255,255,255,0.03)',
+                }}
+              />
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleCopyUrl}
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.07)',
+                color: 'var(--fg0)',
+                borderRadius: 8,
+                padding: '0.45rem 0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Copy Controller URL
+            </button>
+            <button
+              onClick={() => {
+                joyRef.current = { x: 0, y: 0 };
+                setWalkEnabled(false);
+                setWalkDirection('forward');
+                setRotationMode('off');
+                setResetToken((prev) => prev + 1);
+              }}
+              style={{
+                border: '1px solid rgba(255,120,120,0.4)',
+                background: 'rgba(255,120,120,0.1)',
+                color: '#FF9A9A',
+                borderRadius: 8,
+                padding: '0.45rem 0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Reset Pose
+            </button>
+          </div>
+        </section>
+      )}
+
+      {panelHidden && (
+        <button
+          onClick={() => setPanelHidden(false)}
+          style={{
+            position: 'fixed',
+            top: '1rem',
+            left: '1rem',
+            zIndex: 20,
+            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'rgba(10, 14, 28, 0.78)',
+            color: 'var(--fg0)',
+            borderRadius: 8,
+            padding: '0.4rem 0.6rem',
+            fontSize: '0.76rem',
+            cursor: 'pointer',
+          }}
+        >
+          Connection
+        </button>
+      )}
 
       <div
         style={{
@@ -365,25 +439,6 @@ export default function ArcadePage() {
           Back To Exhibit
         </Link>
       </div>
-
-      {!audioUnlocked && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '1rem',
-            left: '1rem',
-            zIndex: 20,
-            color: '#F7D154',
-            fontSize: '0.78rem',
-            background: 'rgba(247, 209, 84, 0.08)',
-            border: '1px solid rgba(247, 209, 84, 0.25)',
-            padding: '0.45rem 0.65rem',
-            borderRadius: 8,
-          }}
-        >
-          Audio locked: press Enable Audio on this Mac before remote roar SFX.
-        </div>
-      )}
     </main>
   );
 }

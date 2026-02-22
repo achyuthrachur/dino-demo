@@ -17,6 +17,8 @@ import { useAblySession } from '@/app/_lib/arcade/useAblySession';
 import { useSessionSocket } from '@/app/_lib/arcade/useSessionSocket';
 
 const KNOB_SIZE = 94;
+type WalkDirection = 'forward' | 'reverse';
+type RotateMode = 'off' | 'left' | 'right';
 
 function statusColor(status: 'disconnected' | 'connecting' | 'connected'): string {
   if (status === 'connected') return '#7CF7C6';
@@ -30,6 +32,9 @@ export default function ControllerPage() {
   const [statusNote, setStatusNote] = useState('Waiting for bridge...');
   const [deployWarning, setDeployWarning] = useState<string | null>(null);
   const [joyUi, setJoyUi] = useState<JoyVector>({ x: 0, y: 0 });
+  const [walkEnabled, setWalkEnabled] = useState(false);
+  const [walkDirection, setWalkDirection] = useState<WalkDirection>('forward');
+  const [rotateMode, setRotateMode] = useState<RotateMode>('off');
   const ablyKey = process.env.NEXT_PUBLIC_ABLY_KEY;
   const useAbly = Boolean(ablyKey);
 
@@ -156,9 +161,9 @@ export default function ControllerPage() {
     setJoyUi({ x: 0, y: 0 });
   }, []);
 
-  const handleAction = useCallback((action: ArcadeAction) => {
-    if (status !== 'connected') return;
-    send({
+  const handleAction = useCallback((action: ArcadeAction): boolean => {
+    if (status !== 'connected') return false;
+    return send({
       type: 'action',
       session,
       clientId: clientIdRef.current,
@@ -167,6 +172,33 @@ export default function ControllerPage() {
       action,
     });
   }, [send, session, status]);
+
+  const handleWalkToggle = useCallback(() => {
+    const sent = handleAction('walk_toggle');
+    if (!sent) return;
+    setWalkEnabled((previous) => !previous);
+  }, [handleAction]);
+
+  const handleWalkDirection = useCallback((direction: WalkDirection) => {
+    const sent = handleAction(direction === 'forward' ? 'walk_forward' : 'walk_reverse');
+    if (!sent) return;
+    setWalkDirection(direction);
+  }, [handleAction]);
+
+  const handleRotationMode = useCallback((mode: RotateMode) => {
+    const sent = handleAction(mode === 'left' ? 'rotate_left' : mode === 'right' ? 'rotate_right' : 'rotate_off');
+    if (!sent) return;
+    setRotateMode(mode);
+  }, [handleAction]);
+
+  const handleReset = useCallback(() => {
+    const sent = handleAction('reset_pose');
+    if (!sent) return;
+    setWalkEnabled(false);
+    setWalkDirection('forward');
+    setRotateMode('off');
+    releaseJoystick();
+  }, [handleAction, releaseJoystick]);
 
   const knobTranslate = useMemo(() => {
     const maxOffset = 88;
@@ -186,8 +218,8 @@ export default function ControllerPage() {
         userSelect: 'none',
         WebkitUserSelect: 'none',
         display: 'grid',
-        gridTemplateRows: 'auto 1fr auto',
-        gap: '1rem',
+        gridTemplateRows: 'auto auto 1fr auto',
+        gap: '0.75rem',
         padding: '1rem',
         background: 'radial-gradient(circle at 20% 20%, #18243d 0%, #07090d 60%)',
       }}
@@ -236,6 +268,57 @@ export default function ControllerPage() {
           <div style={{ fontSize: '0.76rem', color: '#FFB0B0' }}>{deployWarning}</div>
         )}
       </header>
+
+      <section
+        className="glass-panel"
+        style={{
+          padding: '0.75rem',
+          display: 'grid',
+          gap: '0.5rem',
+        }}
+      >
+        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>
+          Walk Direction
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' }}>
+          <button
+            onClick={() => handleWalkDirection('forward')}
+            style={buttonStyle('#6FEFC4', walkDirection === 'forward')}
+          >
+            Forward
+          </button>
+          <button
+            onClick={() => handleWalkDirection('reverse')}
+            style={buttonStyle('#6FEFC4', walkDirection === 'reverse')}
+          >
+            Reverse
+          </button>
+        </div>
+
+        <div style={{ fontSize: '0.76rem', color: 'var(--fg1)', letterSpacing: '0.03em' }}>
+          Rotation
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' }}>
+          <button
+            onClick={() => handleRotationMode('off')}
+            style={buttonStyle('#8BB7FF', rotateMode === 'off')}
+          >
+            Off
+          </button>
+          <button
+            onClick={() => handleRotationMode('left')}
+            style={buttonStyle('#8BB7FF', rotateMode === 'left')}
+          >
+            Left
+          </button>
+          <button
+            onClick={() => handleRotationMode('right')}
+            style={buttonStyle('#8BB7FF', rotateMode === 'right')}
+          >
+            Right
+          </button>
+        </div>
+      </section>
 
       <section
         style={{
@@ -290,30 +373,48 @@ export default function ControllerPage() {
       <section
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: '0.65rem',
+          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gap: '0.55rem',
         }}
       >
         <button
-          onClick={() => handleAction('walk_toggle')}
-          style={buttonStyle('#6FEFC4')}
+          onClick={handleWalkToggle}
+          style={buttonStyle('#6FEFC4', walkEnabled)}
         >
-          Walk
+          {walkEnabled ? 'Walk On' : 'Walk Off'}
         </button>
         <button
-          onClick={() => handleAction('roar')}
+          onClick={() => handleAction('anim_minion_spawn')}
           style={buttonStyle('#FFD166')}
         >
-          Roar
+          Minion Spawn
         </button>
         <button
-          onClick={() => handleAction('mode_toggle')}
+          onClick={() => handleAction('anim_next_round')}
           style={buttonStyle('#8BB7FF')}
         >
-          Mode
+          Next Round
         </button>
         <button
-          onClick={() => handleAction('reset_pose')}
+          onClick={() => handleAction('anim_player_spawn')}
+          style={buttonStyle('#8BB7FF')}
+        >
+          Player Spawn
+        </button>
+        <button
+          onClick={() => handleAction('anim_spawn')}
+          style={buttonStyle('#8BB7FF')}
+        >
+          Raid Spawn
+        </button>
+        <button
+          onClick={() => handleAction('anim_victory')}
+          style={buttonStyle('#FFD166')}
+        >
+          Victory
+        </button>
+        <button
+          onClick={handleReset}
           style={buttonStyle('#FF9A9A')}
         >
           Reset
@@ -323,17 +424,18 @@ export default function ControllerPage() {
   );
 }
 
-function buttonStyle(color: string): CSSProperties {
+function buttonStyle(color: string, active = false): CSSProperties {
   return {
     appearance: 'none',
     border: `1px solid ${color}66`,
-    background: `${color}22`,
+    background: active ? `${color}40` : `${color}22`,
     color,
     borderRadius: 12,
-    minHeight: 60,
+    minHeight: 52,
     fontWeight: 700,
-    fontSize: '1rem',
+    fontSize: '0.86rem',
     letterSpacing: '0.02em',
     touchAction: 'none',
+    boxShadow: active ? `0 0 0 1px ${color}55 inset` : 'none',
   };
 }
