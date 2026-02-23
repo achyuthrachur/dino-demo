@@ -633,7 +633,7 @@ function RexyArcadeModel({
     () => prepareAnimationsForArcade(animations, restPositionsByNodeName),
     [animations, restPositionsByNodeName],
   );
-  const { actions } = useAnimations(preparedAnimations, groupRef);
+  const { actions, mixer } = useAnimations(preparedAnimations, groupRef);
 
   const clipSet = useMemo(() => buildClipSet(preparedAnimations), [preparedAnimations]);
   const clipDurations = useMemo(
@@ -735,6 +735,11 @@ function RexyArcadeModel({
         nextAction.stop();
         nextAction.reset();
         nextAction.play();
+        // Re-apply loop settings after play() — Three.js stop() calls reset()
+        // internally which sets _startTime=0; reaffirming here ensures the
+        // mixer picks up the correct mode on its very next update tick.
+        nextAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+        nextAction.clampWhenFinished = !loop;
       }
 
       currentActionRef.current = nextAction;
@@ -749,6 +754,7 @@ function RexyArcadeModel({
     locomotionActionRef.current = null;
   }, []);
 
+
   const resolveWalkClipName = useCallback(
     (activeClipSet: ClipSet): string | null => {
       // Return the first candidate that actually has an action in the mixer.
@@ -757,9 +763,9 @@ function RexyArcadeModel({
       // missingOrWrongAction stays true every frame → infinite silent retry →
       // locomotion moves the actor while no animation plays (visible slide).
       for (const name of [
+        activeClipSet.minionSpawn,
         activeClipSet.spawnWalkLoop,
         activeClipSet.spawn,
-        activeClipSet.minionSpawn,
       ]) {
         if (name && actions[name]) return name;
       }
@@ -779,6 +785,20 @@ function RexyArcadeModel({
     walkCycleActiveRef.current = true;
     locomotionActionRef.current = playClip(walkClip, true);
   }, [playClip, resolveWalkClipName]);
+
+  // Safety net: if the walk clip fires a 'finished' event (meaning it somehow
+  // ran as LoopOnce rather than LoopRepeat), immediately restart the walk cycle.
+  useEffect(() => {
+    const handleFinished = (e: { action: THREE.AnimationAction }) => {
+      if (!walkCycleActiveRef.current) return;
+      const walkClipName = resolveWalkClipName(clipSetRef.current);
+      if (!walkClipName) return;
+      if (e.action.getClip().name !== walkClipName) return;
+      startWalkCycle();
+    };
+    mixer.addEventListener('finished', handleFinished);
+    return () => { mixer.removeEventListener('finished', handleFinished); };
+  }, [mixer, resolveWalkClipName, startWalkCycle]);
 
   const syncBaseline = useCallback(() => {
     if (sequenceActiveRef.current) return;
