@@ -636,9 +636,24 @@ function RexyArcadeModel({
     locomotionActionRef.current = null;
   }, []);
 
-  const resolveWalkClipName = useCallback((activeClipSet: ClipSet): string | null => {
-    return activeClipSet.spawnWalkLoop ?? activeClipSet.spawn ?? activeClipSet.minionSpawn;
-  }, []);
+  const resolveWalkClipName = useCallback(
+    (activeClipSet: ClipSet): string | null => {
+      // Return the first candidate that actually has an action in the mixer.
+      // Without this validation, a name that doesn't exist in `actions` causes
+      // playClip to return null silently, currentActionRef is never updated,
+      // missingOrWrongAction stays true every frame → infinite silent retry →
+      // locomotion moves the actor while no animation plays (visible slide).
+      for (const name of [
+        activeClipSet.spawnWalkLoop,
+        activeClipSet.spawn,
+        activeClipSet.minionSpawn,
+      ]) {
+        if (name && actions[name]) return name;
+      }
+      return null;
+    },
+    [actions],
+  );
 
   const startWalkCycle = useCallback(() => {
     const activeClipSet = clipSetRef.current;
