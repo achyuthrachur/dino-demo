@@ -2,7 +2,7 @@
 
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment, useAnimations, useGLTF } from '@react-three/drei';
+import { Environment, Stars, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/config';
 
@@ -105,6 +105,90 @@ function SceneBackground() {
   }, [scene]);
 
   return null;
+}
+
+// ─── rock positions (all outside ARENA_RADIUS=18 so they never block the dino) ─
+const ROCK_DEFS: Array<{
+  pos: [number, number, number];
+  scale: [number, number, number];
+  yRot: number;
+}> = [
+  { pos: [ 23,  0,  4],  scale: [3.5, 5.0, 2.8], yRot: 0.3 },
+  { pos: [-21,  0, -9],  scale: [2.8, 4.0, 2.2], yRot: 1.1 },
+  { pos: [ 15,  0,-25],  scale: [4.2, 6.0, 3.5], yRot: 0.7 },
+  { pos: [-27,  0, 10],  scale: [3.0, 3.5, 2.5], yRot: 2.1 },
+  { pos: [  5,  0,-29],  scale: [3.5, 4.5, 3.0], yRot: 1.5 },
+  { pos: [-15,  0, 23],  scale: [2.5, 3.2, 2.0], yRot: 0.9 },
+  { pos: [ 29,  0,-16],  scale: [4.0, 5.5, 3.2], yRot: 1.8 },
+  { pos: [-31,  0, -3],  scale: [3.2, 4.2, 2.8], yRot: 0.4 },
+  { pos: [ 19,  0, 21],  scale: [2.2, 3.5, 1.8], yRot: 2.5 },
+  { pos: [ -8,  0, 31],  scale: [3.8, 5.0, 3.0], yRot: 1.2 },
+  { pos: [ 35,  0, -2],  scale: [5.0, 7.0, 4.0], yRot: 0.6 },
+  { pos: [-10,  0,-35],  scale: [4.5, 6.5, 3.8], yRot: 1.9 },
+];
+
+function RockCluster({
+  pos,
+  scale,
+  yRot,
+}: {
+  pos: [number, number, number];
+  scale: [number, number, number];
+  yRot: number;
+}) {
+  const darkRock = '#1C1C1C';
+  const midRock  = '#242420';
+  return (
+    <group position={pos} rotation={[0, yRot, 0]}>
+      {/* main boulder */}
+      <mesh
+        position={[0, scale[1] * 0.38, 0]}
+        scale={scale}
+        rotation={[0.18, 0.25, 0.12]}
+      >
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color={darkRock} roughness={0.97} metalness={0.04} />
+      </mesh>
+      {/* secondary boulder */}
+      <mesh
+        position={[scale[0] * 0.55, scale[1] * 0.22, scale[2] * 0.3]}
+        scale={[scale[0] * 0.55, scale[1] * 0.55, scale[2] * 0.55]}
+        rotation={[0.45, 1.1, 0.3]}
+      >
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color={midRock} roughness={0.98} metalness={0.03} />
+      </mesh>
+    </group>
+  );
+}
+
+function ArcadeEnvironment() {
+  const { scene } = useThree();
+
+  useEffect(() => {
+    scene.fog = new THREE.FogExp2(0x07090d, 0.019);
+    return () => {
+      scene.fog = null;
+    };
+  }, [scene]);
+
+  return (
+    <group>
+      {/* Stars — subtle, low saturation */}
+      <Stars radius={90} depth={50} count={2200} factor={2} saturation={0.15} fade />
+
+      {/* Ground plane */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+        <planeGeometry args={[500, 500]} />
+        <meshStandardMaterial color="#111A0D" roughness={0.96} metalness={0.04} />
+      </mesh>
+
+      {/* Rock formations around the perimeter */}
+      {ROCK_DEFS.map((r, i) => (
+        <RockCluster key={i} pos={r.pos} scale={r.scale} yRot={r.yRot} />
+      ))}
+    </group>
+  );
 }
 
 function LoadingFallback() {
@@ -1197,8 +1281,7 @@ function ArcadeSceneImpl({
       <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
 
       <Suspense fallback={<LoadingFallback />}>
-        {/* TerrainGround disabled for debugging — actor falls back to flat Y=0 + ARENA_RADIUS XZ clamp */}
-        {/* <TerrainGround terrainRootRef={terrainRootRef} terrainBoundsRef={terrainBoundsRef} /> */}
+        <ArcadeEnvironment />
         <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
         <ArcadeRig
           actorRef={actorRef}
