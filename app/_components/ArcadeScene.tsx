@@ -29,15 +29,15 @@ const THROTTLE_INPUT_SMOOTHING_PER_SECOND = 10;
 const WALK_LOOP_START_WORLD_SPEED = 0.12;
 const WALK_LOOP_STOP_WORLD_SPEED = 0.04;
 const LOCOMOTION_SPEED_SMOOTHING_PER_SECOND = 14;
-const CAMERA_YAW_RADIANS_PER_SECOND = 1.35;
-const CAMERA_PITCH_RADIANS_PER_SECOND = 1.45;
-const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(62);
-const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(28);
-const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(80);
+const CAMERA_YAW_RADIANS_PER_SECOND = 2.2;
+const CAMERA_PITCH_RADIANS_PER_SECOND = 2.2;
+const CAMERA_DEFAULT_PITCH_RADIANS = THREE.MathUtils.degToRad(55);
+const CAMERA_MIN_PITCH_RADIANS = THREE.MathUtils.degToRad(5);
+const CAMERA_MAX_PITCH_RADIANS = THREE.MathUtils.degToRad(88);
 const CAMERA_DISTANCE_MULTIPLIER = 2.08;
 const CAMERA_TARGET_SMOOTHING_PER_SECOND = 9;
 const CAMERA_POSITION_SMOOTHING_PER_SECOND = 10;
-const CAMERA_INPUT_SMOOTHING_PER_SECOND = 5;
+const CAMERA_INPUT_SMOOTHING_PER_SECOND = 7;
 const CAMERA_STICK_DEADZONE = 0.005;
 const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(8);
 const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(6);
@@ -620,8 +620,13 @@ function RexyArcadeModel({
           fadeStopTimerRef.current = null;
         }, FADE_SECONDS * 1000 + 40);
       } else {
+        // stop() fully deactivates the action and clears stale finished/clamped
+        // state from a previous LoopOnce run before resetting and replaying.
+        // fadeIn() on a previously-finished action can leave a stale weight
+        // interpolant that prevents the loop from running correctly.
+        nextAction.stop();
         nextAction.reset();
-        nextAction.fadeIn(FADE_SECONDS).play();
+        nextAction.play();
       }
 
       currentActionRef.current = nextAction;
