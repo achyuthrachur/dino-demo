@@ -834,6 +834,24 @@ function RexyArcadeModel({
     if (!walkClipName) return;
 
     const activeAction = currentActionRef.current;
+
+    // Per-frame enforcement: if the walk action is present but stuck in
+    // LoopOnce/clamped/paused state, fix it directly here before the
+    // isRunning() check so we don't trigger an unnecessary full restart.
+    if (activeAction && activeAction.getClip().name === walkClipName && walkCycleActiveRef.current) {
+      if (activeAction.loop !== THREE.LoopRepeat || activeAction.repetitions !== Infinity) {
+        activeAction.setLoop(THREE.LoopRepeat, Infinity);
+      }
+      if (activeAction.clampWhenFinished) {
+        activeAction.clampWhenFinished = false;
+      }
+      if (activeAction.paused) {
+        activeAction.paused = false;
+        const dur = activeAction.getClip().duration;
+        if (dur > 0) activeAction.time = activeAction.time % dur;
+      }
+    }
+
     const missingOrWrongAction =
       !activeAction || !activeAction.isRunning() || activeAction.getClip().name !== walkClipName;
     if (missingOrWrongAction) {
