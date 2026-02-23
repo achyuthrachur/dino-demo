@@ -2,7 +2,7 @@
 
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment, Stars, useAnimations, useGLTF } from '@react-three/drei';
+import { Environment, Sky, Stars, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { ARCADE_CONFIG, applyDeadzone, type JoyVector } from '../_lib/arcade/config';
 
@@ -43,6 +43,13 @@ const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(8);
 const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(6);
 const LOCOMOTION_MIN_TIME_SCALE = 1.0;
 const LOCOMOTION_MAX_TIME_SCALE = 1.0;
+
+const FOREST_FOG_COLOR       = 0xb9d4c6;
+const FOREST_FOG_DENSITY     = 0.008;
+const FOREST_GROUND_COLOR    = '#3A6B35';
+const FOREST_BARK_COLOR      = '#4A3728';
+const FOREST_FOLIAGE_COLOR   = '#2D6A2F';
+const SUN_POSITION: [number, number, number] = [50, 60, -30];
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -99,65 +106,74 @@ interface ClipSet {
 
 function SceneBackground() {
   const { scene } = useThree();
-
   useEffect(() => {
-    scene.background = new THREE.Color('#07090D');
+    scene.background = null;
   }, [scene]);
-
   return null;
 }
 
-// ─── rock positions (all outside ARENA_RADIUS=18 so they never block the dino) ─
-const ROCK_DEFS: Array<{
-  pos: [number, number, number];
-  scale: [number, number, number];
-  yRot: number;
-}> = [
-  { pos: [ 23,  0,  4],  scale: [3.5, 5.0, 2.8], yRot: 0.3 },
-  { pos: [-21,  0, -9],  scale: [2.8, 4.0, 2.2], yRot: 1.1 },
-  { pos: [ 15,  0,-25],  scale: [4.2, 6.0, 3.5], yRot: 0.7 },
-  { pos: [-27,  0, 10],  scale: [3.0, 3.5, 2.5], yRot: 2.1 },
-  { pos: [  5,  0,-29],  scale: [3.5, 4.5, 3.0], yRot: 1.5 },
-  { pos: [-15,  0, 23],  scale: [2.5, 3.2, 2.0], yRot: 0.9 },
-  { pos: [ 29,  0,-16],  scale: [4.0, 5.5, 3.2], yRot: 1.8 },
-  { pos: [-31,  0, -3],  scale: [3.2, 4.2, 2.8], yRot: 0.4 },
-  { pos: [ 19,  0, 21],  scale: [2.2, 3.5, 1.8], yRot: 2.5 },
-  { pos: [ -8,  0, 31],  scale: [3.8, 5.0, 3.0], yRot: 1.2 },
-  { pos: [ 35,  0, -2],  scale: [5.0, 7.0, 4.0], yRot: 0.6 },
-  { pos: [-10,  0,-35],  scale: [4.5, 6.5, 3.8], yRot: 1.9 },
-];
+function seededRandom(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
 
-function RockCluster({
-  pos,
-  scale,
-  yRot,
-}: {
-  pos: [number, number, number];
-  scale: [number, number, number];
-  yRot: number;
-}) {
-  const darkRock = '#1C1C1C';
-  const midRock  = '#242420';
+const TREE_COUNT = 60;
+
+function ForestTrees() {
+  const trunkRef   = useRef<THREE.InstancedMesh>(null);
+  const foliageRef = useRef<THREE.InstancedMesh>(null);
+
+  useEffect(() => {
+    const trunk   = trunkRef.current;
+    const foliage = foliageRef.current;
+    if (!trunk || !foliage) return;
+
+    const rand   = seededRandom(42);
+    const matrix = new THREE.Matrix4();
+    const pos    = new THREE.Vector3();
+    const quat   = new THREE.Quaternion();
+    const scl    = new THREE.Vector3();
+
+    for (let i = 0; i < TREE_COUNT; i++) {
+      const angle  = rand() * Math.PI * 2;
+      const radius = 25 + rand() * 55;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+
+      const trunkH = 4 + rand() * 4;
+      const trunkR = 0.2 + rand() * 0.15;
+      pos.set(x, trunkH / 2, z);
+      quat.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, 0));
+      scl.set(trunkR, trunkH, trunkR);
+      matrix.compose(pos, quat, scl);
+      trunk.setMatrixAt(i, matrix);
+
+      const foliageH = 4 + rand() * 4;
+      const foliageR = 2 + rand() * 1.5;
+      pos.set(x, trunkH + foliageH * 0.4, z);
+      quat.identity();
+      scl.set(foliageR, foliageH, foliageR);
+      matrix.compose(pos, quat, scl);
+      foliage.setMatrixAt(i, matrix);
+    }
+
+    trunk.instanceMatrix.needsUpdate   = true;
+    foliage.instanceMatrix.needsUpdate = true;
+  }, []);
+
   return (
-    <group position={pos} rotation={[0, yRot, 0]}>
-      {/* main boulder */}
-      <mesh
-        position={[0, scale[1] * 0.38, 0]}
-        scale={scale}
-        rotation={[0.18, 0.25, 0.12]}
-      >
-        <dodecahedronGeometry args={[1, 0]} />
-        <meshStandardMaterial color={darkRock} roughness={0.97} metalness={0.04} />
-      </mesh>
-      {/* secondary boulder */}
-      <mesh
-        position={[scale[0] * 0.55, scale[1] * 0.22, scale[2] * 0.3]}
-        scale={[scale[0] * 0.55, scale[1] * 0.55, scale[2] * 0.55]}
-        rotation={[0.45, 1.1, 0.3]}
-      >
-        <dodecahedronGeometry args={[1, 0]} />
-        <meshStandardMaterial color={midRock} roughness={0.98} metalness={0.03} />
-      </mesh>
+    <group>
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, TREE_COUNT]}>
+        <cylinderGeometry args={[1, 1.2, 1, 7, 1]} />
+        <meshStandardMaterial color={FOREST_BARK_COLOR} roughness={0.95} metalness={0.02} />
+      </instancedMesh>
+      <instancedMesh ref={foliageRef} args={[undefined, undefined, TREE_COUNT]}>
+        <coneGeometry args={[1, 1, 8, 1]} />
+        <meshStandardMaterial color={FOREST_FOLIAGE_COLOR} roughness={0.88} metalness={0.0} />
+      </instancedMesh>
     </group>
   );
 }
@@ -166,7 +182,7 @@ function ArcadeEnvironment() {
   const { scene } = useThree();
 
   useEffect(() => {
-    scene.fog = new THREE.FogExp2(0x07090d, 0.019);
+    scene.fog = new THREE.FogExp2(FOREST_FOG_COLOR, FOREST_FOG_DENSITY);
     return () => {
       scene.fog = null;
     };
@@ -174,19 +190,13 @@ function ArcadeEnvironment() {
 
   return (
     <group>
-      {/* Stars — subtle, low saturation */}
-      <Stars radius={90} depth={50} count={2200} factor={2} saturation={0.15} fade />
-
       {/* Ground plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[500, 500]} />
-        <meshStandardMaterial color="#111A0D" roughness={0.96} metalness={0.04} />
+        <meshStandardMaterial color={FOREST_GROUND_COLOR} roughness={0.96} metalness={0.04} />
       </mesh>
 
-      {/* Rock formations around the perimeter */}
-      {ROCK_DEFS.map((r, i) => (
-        <RockCluster key={i} pos={r.pos} scale={r.scale} yRot={r.yRot} />
-      ))}
+      <ForestTrees />
     </group>
   );
 }
@@ -297,10 +307,11 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
   const spawnWalkLoop = pickClip(
     animations,
     (normalized) =>
-      normalized.includes('raidspawn') &&
-      !normalized.includes('minion') &&
-      !normalized.includes('player') &&
-      normalized.includes('walkloop'),
+      normalized.includes('radarbwalk') ||
+      (normalized.includes('raidspawn') &&
+        !normalized.includes('minion') &&
+        !normalized.includes('player') &&
+        normalized.includes('walkloop')),
   );
   const victoryIn = pickClip(animations, (normalized) => normalized.includes('raidvictoryin'));
   const victoryOut = pickClip(animations, (normalized) => normalized.includes('raidvictoryout'));
@@ -330,6 +341,7 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
 
 function isWalkCycleClipName(normalizedClipName: string): boolean {
   if (normalizedClipName.includes('raidminionspawn')) return true;
+  if (normalizedClipName.includes('radarbwalk')) return true;
   return (
     normalizedClipName.includes('raidspawn') &&
     !normalizedClipName.includes('minion') &&
@@ -546,14 +558,26 @@ function prepareAnimationsForArcade(
   // designer-authored looping walk cycle.
   const hasDedicatedWalkLoop = animations.some((clip) => {
     const n = normalizeClipName(clip.name);
-    return n.includes('raidspawn') && !n.includes('minion') && !n.includes('player') && n.includes('walkloop');
+    return (
+      n.includes('radarbwalk') ||
+      (n.includes('raidspawn') && !n.includes('minion') && !n.includes('player') && n.includes('walkloop'))
+    );
   });
 
   const prepared: THREE.AnimationClip[] = [];
   for (const clip of animations) {
     const normalized = normalizeClipName(clip.name);
     if (!isWalkCycleClipName(normalized)) {
-      prepared.push(clip);
+      const cloned = clip.clone();
+      const rootMotionTrack = findRootMotionTrack(cloned);
+      if (rootMotionTrack) {
+        // Strip the pelvis/root position track so the mesh never drifts during
+        // or after sequence animations. Rotation tracks are kept so the
+        // animations still play correctly in place.
+        cloned.tracks = cloned.tracks.filter((t) => t !== rootMotionTrack);
+        cloned.resetDuration();
+      }
+      prepared.push(cloned);
       continue;
     }
 
@@ -1244,6 +1268,24 @@ function ArcadeFollowCamera({ actorRef, aimRef, radius, resetToken }: ArcadeFoll
   return null;
 }
 
+function ForestAudio() {
+  useEffect(() => {
+    const audio = new Audio('/audio/Forest_Sounds.mov');
+    audio.loop   = true;
+    audio.volume = 0.35;
+    const attempt = audio.play();
+    if (attempt !== undefined) {
+      attempt.catch(() => {
+        const resume = () => audio.play().catch(() => {});
+        window.addEventListener('pointerdown', resume, { once: true });
+        window.addEventListener('keydown',     resume, { once: true });
+      });
+    }
+    return () => { audio.pause(); audio.src = ''; };
+  }, []);
+  return null;
+}
+
 function ArcadeSceneImpl({
   moveRef,
   aimRef,
@@ -1261,40 +1303,48 @@ function ArcadeSceneImpl({
   const terrainBoundsRef = useRef<TerrainBounds | null>(null);
 
   return (
-    <Canvas
-      camera={{ position: [0, 18, 10], fov: 42 }}
-      gl={{ antialias: true, powerPreference: 'high-performance', localClippingEnabled: true }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100vw',
-        height: '100vh',
-      }}
-    >
-      <SceneBackground />
-      <Environment preset="studio" environmentIntensity={0.45} />
-
-      <ambientLight intensity={0.75} />
-      <directionalLight intensity={1.15} position={[4, 7, 5]} />
-      <directionalLight intensity={0.55} position={[-5, 2, -4]} />
-      <pointLight color="#7CF7C6" intensity={8} position={[-6, 4, -8]} distance={30} decay={2} />
-      <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
-
-      <Suspense fallback={<LoadingFallback />}>
-        <ArcadeEnvironment />
-        <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
-        <ArcadeRig
-          actorRef={actorRef}
-          moveRef={moveRef}
-          locomotionRef={locomotionRef}
-          terrainRootRef={terrainRootRef}
-          terrainBoundsRef={terrainBoundsRef}
-          resetToken={resetToken}
-          animationCue={animationCue}
-          onModelRadiusChange={setModelRadius}
+    <>
+      <ForestAudio />
+      <Canvas
+        camera={{ position: [0, 18, 10], fov: 42 }}
+        gl={{ antialias: true, powerPreference: 'high-performance', localClippingEnabled: true }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '100vh',
+        }}
+      >
+        <SceneBackground />
+        <Environment preset="forest" environmentIntensity={0.55} />
+        <Sky
+          distance={4500}
+          sunPosition={SUN_POSITION}
+          turbidity={6}
+          rayleigh={0.8}
+          mieCoefficient={0.003}
+          mieDirectionalG={0.92}
         />
-      </Suspense>
-    </Canvas>
+        <directionalLight intensity={2.2} position={SUN_POSITION} color="#FFF5E0" castShadow={false} />
+        <directionalLight intensity={0.55} position={[-20, 30, 20]} color="#A8C8E8" />
+        <ambientLight intensity={0.45} color="#C8E0B0" />
+
+        <Suspense fallback={<LoadingFallback />}>
+          <ArcadeEnvironment />
+          <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
+          <ArcadeRig
+            actorRef={actorRef}
+            moveRef={moveRef}
+            locomotionRef={locomotionRef}
+            terrainRootRef={terrainRootRef}
+            terrainBoundsRef={terrainBoundsRef}
+            resetToken={resetToken}
+            animationCue={animationCue}
+            onModelRadiusChange={setModelRadius}
+          />
+        </Suspense>
+      </Canvas>
+    </>
   );
 }
 
