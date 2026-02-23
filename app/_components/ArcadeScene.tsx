@@ -1192,7 +1192,8 @@ function ArcadeSceneImpl({
       <pointLight color="#5AD4FF" intensity={5} position={[6, 2, -10]} distance={30} decay={2} />
 
       <Suspense fallback={<LoadingFallback />}>
-        <TerrainGround terrainRootRef={terrainRootRef} terrainBoundsRef={terrainBoundsRef} />
+        {/* TerrainGround disabled for debugging — actor falls back to flat Y=0 + ARENA_RADIUS XZ clamp */}
+        {/* <TerrainGround terrainRootRef={terrainRootRef} terrainBoundsRef={terrainBoundsRef} /> */}
         <ArcadeFollowCamera actorRef={actorRef} aimRef={aimRef} radius={modelRadius} resetToken={resetToken} />
         <ArcadeRig
           actorRef={actorRef}
@@ -1212,4 +1213,4 @@ function ArcadeSceneImpl({
 export const ArcadeScene = memo(ArcadeSceneImpl);
 
 useGLTF.preload(GLB_PATH);
-useGLTF.preload(TERRAIN_GLB_PATH);
+// useGLTF.preload(TERRAIN_GLB_PATH); // disabled while terrain is commented out
