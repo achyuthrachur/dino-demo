@@ -47,12 +47,20 @@ const LOCOMOTION_MAX_TIME_SCALE = 1.0;
 // 0.70 = first 70% of frames (walk + roar), discarding the final stand portion.
 const MINION_SPAWN_WALK_END_RATIO = 0.70;
 
-const FOREST_FOG_COLOR       = 0xb9d4c6;
-const FOREST_FOG_DENSITY     = 0.008;
-const FOREST_GROUND_COLOR    = '#3A6B35';
-const FOREST_BARK_COLOR      = '#4A3728';
-const FOREST_FOLIAGE_COLOR   = '#2D6A2F';
-const SUN_POSITION: [number, number, number] = [50, 60, -30];
+const FOREST_FOG_COLOR    = 0x90b0a8;   // blue-grey atmospheric mist
+const FOREST_FOG_DENSITY  = 0.013;
+const FOREST_GROUND_COLOR = '#1c1208';  // very dark brown — forest floor
+const FOREST_BARK_COLOR   = '#261408';  // darker, more realistic bark
+const SUN_POSITION: [number, number, number] = [80, 60, 50]; // more angled, dramatic
+const PALM_COUNT = 10;
+const FOLIAGE_COLORS = [
+  '#1e5c1a', '#2a7a30', '#255e25', '#356b2a', '#3a8238', '#4a7a1f',
+] as const; // 6 colours for more variety
+const STREAM_POINTS: [number, number, number][] = [
+  [-90, 0.05, -35], [-50, 0.05, -25], [-15, 0.05, -22],
+  [ 25, 0.05,  -8], [ 55, 0.05,  10], [ 80, 0.05,   5],
+  [ 90, 0.05, -20],
+];
 
 export type ArcadeAnimCueKind = 'minion_spawn' | 'next_round' | 'player_spawn' | 'spawn' | 'victory';
 
@@ -124,61 +132,724 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-const TREE_COUNT = 60;
+// Pre-compute 80 sample points along the stream curve for proximity checks
+const STREAM_CURVE = new THREE.CatmullRomCurve3(
+  STREAM_POINTS.map(p => new THREE.Vector3(...p))
+);
+const STREAM_SAMPLES = STREAM_CURVE.getPoints(80);
 
-function ForestTrees() {
-  const trunkRef   = useRef<THREE.InstancedMesh>(null);
-  const foliageRef = useRef<THREE.InstancedMesh>(null);
+function nearStream(x: number, z: number, threshold: number): boolean {
+  return STREAM_SAMPLES.some(p => Math.hypot(p.x - x, p.z - z) < threshold);
+}
+
+function createFoliageAlphaMap(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const half = size / 2;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0,    'rgba(255,255,255,0.98)');
+  grad.addColorStop(0.55, 'rgba(255,255,255,0.88)');
+  grad.addColorStop(0.80, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1,    'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const rand = seededRandom(123);
+  for (let i = 0; i < 80; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${0.05 + rand() * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(rand() * size, rand() * size, 2 + rand() * 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createGrassBladeMap(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 8;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 8, 64);
+  const grad = ctx.createLinearGradient(0, 64, 0, 0);
+  grad.addColorStop(0,   'rgba(255,255,255,1)');
+  grad.addColorStop(0.6, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(1, 64);
+  ctx.lineTo(7, 64);
+  ctx.lineTo(4, 0);
+  ctx.closePath();
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createTreeSilhouetteMap(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 64, 128);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(28, 70, 8, 58);
+  const blobs: [number, number, number][] = [[32, 42, 26], [18, 52, 18], [46, 50, 17], [32, 24, 17]];
+  for (const [cx, cy, r] of blobs) {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0,   'rgba(255,255,255,1)');
+    g.addColorStop(0.7, 'rgba(200,200,200,0.65)');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const TREE_COUNT = 45;
+const LOG_COUNT = 10;
+const WALL_COUNT = 36;
+
+function JungleGround() {
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(400, 400, 100, 100);
+    const pos = g.attributes.position as THREE.BufferAttribute;
+    const rand = seededRandom(7);
+    for (let i = 0; i < pos.count; i++) {
+      pos.setZ(i, (rand() - 0.5) * 0.24);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
+
+  const litterRef = useRef<THREE.InstancedMesh>(null);
 
   useEffect(() => {
-    const trunk   = trunkRef.current;
-    const foliage = foliageRef.current;
-    if (!trunk || !foliage) return;
-
-    const rand   = seededRandom(42);
+    const mesh = litterRef.current;
+    if (!mesh) return;
+    const rand = seededRandom(11);
     const matrix = new THREE.Matrix4();
-    const pos    = new THREE.Vector3();
-    const quat   = new THREE.Quaternion();
-    const scl    = new THREE.Vector3();
-
-    for (let i = 0; i < TREE_COUNT; i++) {
-      const angle  = rand() * Math.PI * 2;
-      const radius = 25 + rand() * 55;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-
-      const trunkH = 4 + rand() * 4;
-      const trunkR = 0.2 + rand() * 0.15;
-      pos.set(x, trunkH / 2, z);
-      quat.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, 0));
-      scl.set(trunkR, trunkH, trunkR);
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    const colors = ['#2a1808', '#1e1205', '#3a2010', '#251508', '#1a1005'];
+    const colorObjs = colors.map(c => new THREE.Color(c));
+    for (let i = 0; i < 600; i++) {
+      const x = (rand() - 0.5) * 200;
+      const z = (rand() - 0.5) * 200;
+      const scale = 0.5 + rand() * 1.0;
+      pos.set(x, 0.02, z);
+      quat.setFromEuler(new THREE.Euler(-Math.PI / 2 + (rand() - 0.5) * 0.1, rand() * Math.PI * 2, 0));
+      scl.set(scale, scale, scale);
       matrix.compose(pos, quat, scl);
-      trunk.setMatrixAt(i, matrix);
-
-      const foliageH = 4 + rand() * 4;
-      const foliageR = 2 + rand() * 1.5;
-      pos.set(x, trunkH + foliageH * 0.4, z);
-      quat.identity();
-      scl.set(foliageR, foliageH, foliageR);
-      matrix.compose(pos, quat, scl);
-      foliage.setMatrixAt(i, matrix);
+      mesh.setMatrixAt(i, matrix);
+      mesh.setColorAt(i, colorObjs[Math.floor(rand() * colorObjs.length)]);
     }
-
-    trunk.instanceMatrix.needsUpdate   = true;
-    foliage.instanceMatrix.needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, []);
 
   return (
     <group>
-      <instancedMesh ref={trunkRef} args={[undefined, undefined, TREE_COUNT]}>
-        <cylinderGeometry args={[1, 1.2, 1, 7, 1]} />
-        <meshStandardMaterial color={FOREST_BARK_COLOR} roughness={0.95} metalness={0.02} />
-      </instancedMesh>
-      <instancedMesh ref={foliageRef} args={[undefined, undefined, TREE_COUNT]}>
-        <coneGeometry args={[1, 1, 8, 1]} />
-        <meshStandardMaterial color={FOREST_FOLIAGE_COLOR} roughness={0.88} metalness={0.0} />
+      <mesh geometry={geo} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <meshStandardMaterial color={FOREST_GROUND_COLOR} roughness={0.96} metalness={0.04} />
+      </mesh>
+      <instancedMesh ref={litterRef} args={[undefined, undefined, 600]}>
+        <circleGeometry args={[0.4, 5]} />
+        <meshStandardMaterial vertexColors roughness={1} metalness={0} />
       </instancedMesh>
     </group>
+  );
+}
+
+const GRASS_COUNT = 10000;
+
+function JungleGrass() {
+  const meshARef = useRef<THREE.InstancedMesh>(null);
+  const meshBRef = useRef<THREE.InstancedMesh>(null);
+
+  const grassTex = useMemo(() => createGrassBladeMap(), []);
+  const timeUniformRef = useRef({ value: 0 });
+
+  const material = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      map: grassTex,
+      alphaMap: grassTex,
+      color: '#5a9e4a',
+      transparent: true,
+      roughness: 1,
+      metalness: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const uTime = timeUniformRef.current;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = uTime;
+      shader.vertexShader = `uniform float uTime;\n` + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         float heightFactor = uv.y;
+         float windPhase = instanceMatrix[3][0] * 0.07 + instanceMatrix[3][2] * 0.07;
+         float wind = sin(uTime * 2.2 + windPhase) * 0.2 * heightFactor;
+         transformed.x += wind;`,
+      );
+    };
+    return mat;
+  }, [grassTex]);
+
+  useFrame((_, dt) => { timeUniformRef.current.value += dt; });
+
+  useEffect(() => {
+    const meshA = meshARef.current;
+    const meshB = meshBRef.current;
+    if (!meshA || !meshB) return;
+
+    const rand = seededRandom(55);
+    const matrix = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+
+    for (let i = 0; i < GRASS_COUNT; i++) {
+      const x = (rand() - 0.5) * 200;
+      const z = (rand() - 0.5) * 200;
+      if (nearStream(x, z, 4)) {
+        pos.set(0, -1000, 0);
+        quat.identity();
+        scl.set(1, 1, 1);
+      } else {
+        const scale = 0.8 + rand() * 0.5;
+        const yRot = rand() * Math.PI * 2;
+        const xTilt = THREE.MathUtils.degToRad(5 + rand() * 15);
+        pos.set(x, 0.3, z);
+        quat.setFromEuler(new THREE.Euler(xTilt, yRot, 0));
+        scl.set(scale, scale, scale);
+      }
+      matrix.compose(pos, quat, scl);
+      meshA.setMatrixAt(i, matrix);
+      if (pos.y > -500) {
+        const e = new THREE.Euler().setFromQuaternion(quat);
+        quat.setFromEuler(new THREE.Euler(e.x, e.y + Math.PI / 2, e.z));
+        matrix.compose(pos, quat, scl);
+      }
+      meshB.setMatrixAt(i, matrix);
+    }
+
+    meshA.instanceMatrix.needsUpdate = true;
+    meshB.instanceMatrix.needsUpdate = true;
+    meshA.material = material;
+    meshB.material = material;
+  }, [material]);
+
+  return (
+    <group>
+      <instancedMesh ref={meshARef} args={[undefined, undefined, GRASS_COUNT]} castShadow={false}>
+        <planeGeometry args={[0.22, 0.9]} />
+        <meshStandardMaterial color="#5a9e4a" roughness={1} metalness={0} side={THREE.DoubleSide} />
+      </instancedMesh>
+      <instancedMesh ref={meshBRef} args={[undefined, undefined, GRASS_COUNT]} castShadow={false}>
+        <planeGeometry args={[0.22, 0.9]} />
+        <meshStandardMaterial color="#5a9e4a" roughness={1} metalness={0} side={THREE.DoubleSide} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+const BUSH_COUNT = 40;
+
+function JungleTrees() {
+  const trunkRef      = useRef<THREE.InstancedMesh>(null);
+  const mainCrownRef  = useRef<THREE.InstancedMesh>(null);
+  const satCrownRef   = useRef<THREE.InstancedMesh>(null);
+  const palmTrunkRef  = useRef<THREE.InstancedMesh>(null);
+  const palmCanopyRef = useRef<THREE.InstancedMesh>(null);
+  const bushRef       = useRef<THREE.InstancedMesh>(null);
+  const logRef        = useRef<THREE.InstancedMesh>(null);
+
+  const foliageAlpha = useMemo(() => createFoliageAlphaMap(), []);
+
+  useEffect(() => {
+    const trunk     = trunkRef.current;
+    const mainCrown = mainCrownRef.current;
+    const satCrown  = satCrownRef.current;
+    const palmTrunk  = palmTrunkRef.current;
+    const palmCanopy = palmCanopyRef.current;
+    const bush       = bushRef.current;
+    const log        = logRef.current;
+    if (!trunk || !mainCrown || !satCrown || !palmTrunk || !palmCanopy || !bush || !log) return;
+
+    const rand = seededRandom(42);
+    const matrix = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    const positions: [number, number][] = [];
+
+    const colorObjs = FOLIAGE_COLORS.map(c => new THREE.Color(c));
+
+    // Normal trees
+    for (let i = 0; i < TREE_COUNT; i++) {
+      let x = 0, z = 0, attempts = 0;
+      do {
+        const angle = rand() * Math.PI * 2;
+        const radius = 22 + rand() * 63;
+        x = Math.cos(angle) * radius;
+        z = Math.sin(angle) * radius;
+        attempts++;
+      } while (
+        attempts < 20 &&
+        (nearStream(x, z, 5) ||
+          positions.some(([px, pz]) => Math.hypot(px - x, pz - z) < 6))
+      );
+      positions.push([x, z]);
+
+      const trunkH = 5 + rand() * 6;
+      const trunkR = 0.25 + rand() * 0.2;
+      const trunkLeanX = (rand() - 0.5) * 0.12;
+      const trunkLeanZ = (rand() - 0.5) * 0.12;
+
+      // Trunk
+      pos.set(x, trunkH / 2, z);
+      quat.setFromEuler(new THREE.Euler(trunkLeanX, rand() * Math.PI * 2, trunkLeanZ));
+      scl.set(trunkR, trunkH, trunkR);
+      matrix.compose(pos, quat, scl);
+      trunk.setMatrixAt(i, matrix);
+
+      const color = colorObjs[i % colorObjs.length];
+
+      // Main crown (ellipsoidal)
+      const crownW = 2.5 + rand() * 2.2;
+      const crownH = crownW * (0.45 + rand() * 0.7);
+      const crownY = trunkH - 0.8;
+      pos.set(x, crownY, z);
+      quat.identity();
+      scl.set(crownW, crownH, crownW);
+      matrix.compose(pos, quat, scl);
+      mainCrown.setMatrixAt(i, matrix);
+      mainCrown.setColorAt(i, color);
+
+      // Satellite crown (smaller, offset)
+      const satScale = crownW * (0.35 + rand() * 0.3);
+      const satOffX = (rand() - 0.5) * crownW * 0.9;
+      const satOffY = -crownH * 0.3;
+      const satOffZ = (rand() - 0.5) * crownW * 0.9;
+      pos.set(x + satOffX, crownY + satOffY, z + satOffZ);
+      scl.set(satScale, satScale, satScale);
+      matrix.compose(pos, quat, scl);
+      satCrown.setMatrixAt(i, matrix);
+      satCrown.setColorAt(i, color);
+    }
+
+    // Palm trees
+    const palmRand = seededRandom(88);
+    const palmPositions: [number, number][] = [];
+    for (let i = 0; i < PALM_COUNT; i++) {
+      let x = 0, z = 0, attempts = 0;
+      do {
+        const angle = palmRand() * Math.PI * 2;
+        const radius = 22 + palmRand() * 63;
+        x = Math.cos(angle) * radius;
+        z = Math.sin(angle) * radius;
+        attempts++;
+      } while (
+        attempts < 20 &&
+        (nearStream(x, z, 5) ||
+          palmPositions.some(([px, pz]) => Math.hypot(px - x, pz - z) < 8))
+      );
+      palmPositions.push([x, z]);
+
+      pos.set(x, 6, z);
+      quat.setFromEuler(new THREE.Euler(0, palmRand() * Math.PI * 2, 0));
+      scl.set(1, 1, 1);
+      matrix.compose(pos, quat, scl);
+      palmTrunk.setMatrixAt(i, matrix);
+
+      pos.set(x, 12, z);
+      quat.identity();
+      matrix.compose(pos, quat, scl);
+      palmCanopy.setMatrixAt(i, matrix);
+    }
+
+    // Bush clusters
+    const bushRand = seededRandom(77);
+    for (let i = 0; i < BUSH_COUNT; i++) {
+      const baseIdx = Math.floor(bushRand() * TREE_COUNT);
+      const [bx, bz] = positions[baseIdx] ?? [0, 0];
+      const ox = (bushRand() - 0.5) * 8;
+      const oz = (bushRand() - 0.5) * 8;
+      const bxf = bx + ox;
+      const bzf = bz + oz;
+      pos.set(bxf, 0.8, bzf);
+      quat.setFromEuler(new THREE.Euler(0, bushRand() * Math.PI * 2, 0));
+      const s = 0.7 + bushRand() * 0.6;
+      scl.set(s, s, s);
+      matrix.compose(pos, quat, scl);
+      bush.setMatrixAt(i, matrix);
+    }
+
+    // Fallen logs
+    const logRand = seededRandom(301);
+    for (let i = 0; i < LOG_COUNT; i++) {
+      const angle = logRand() * Math.PI * 2;
+      const r = 15 + logRand() * 55;
+      const lx = Math.cos(angle) * r;
+      const lz = Math.sin(angle) * r;
+      pos.set(lx, 0.12, lz);
+      const xTilt = Math.PI / 2 + (logRand() - 0.5) * 0.3;
+      quat.setFromEuler(new THREE.Euler(xTilt, logRand() * Math.PI * 2, 0));
+      scl.set(1, 1, 1);
+      matrix.compose(pos, quat, scl);
+      log.setMatrixAt(i, matrix);
+    }
+
+    trunk.instanceMatrix.needsUpdate    = true;
+    mainCrown.instanceMatrix.needsUpdate = true;
+    satCrown.instanceMatrix.needsUpdate  = true;
+    if (mainCrown.instanceColor) mainCrown.instanceColor.needsUpdate = true;
+    if (satCrown.instanceColor)  satCrown.instanceColor.needsUpdate  = true;
+    palmTrunk.instanceMatrix.needsUpdate  = true;
+    palmCanopy.instanceMatrix.needsUpdate = true;
+    bush.instanceMatrix.needsUpdate       = true;
+    log.instanceMatrix.needsUpdate        = true;
+  }, []);
+
+  return (
+    <group>
+      {/* Normal tree trunks */}
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, TREE_COUNT]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.25, 0.45, 5, 8]} />
+        <meshStandardMaterial color={FOREST_BARK_COLOR} roughness={0.95} metalness={0.02} />
+      </instancedMesh>
+      {/* Main crowns — ellipsoidal spheres with foliage alpha */}
+      <instancedMesh ref={mainCrownRef} args={[undefined, undefined, TREE_COUNT]} castShadow receiveShadow>
+        <sphereGeometry args={[1, 10, 8]} />
+        <meshStandardMaterial alphaMap={foliageAlpha} alphaTest={0.25} vertexColors roughness={0.88} metalness={0} side={THREE.DoubleSide} />
+      </instancedMesh>
+      {/* Satellite crowns */}
+      <instancedMesh ref={satCrownRef} args={[undefined, undefined, TREE_COUNT]} castShadow>
+        <sphereGeometry args={[1, 10, 8]} />
+        <meshStandardMaterial alphaMap={foliageAlpha} alphaTest={0.25} vertexColors roughness={0.88} metalness={0} side={THREE.DoubleSide} />
+      </instancedMesh>
+      {/* Palm trunks */}
+      <instancedMesh ref={palmTrunkRef} args={[undefined, undefined, PALM_COUNT]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.1, 0.15, 12, 6]} />
+        <meshStandardMaterial color="#4a3020" roughness={0.95} metalness={0.02} />
+      </instancedMesh>
+      {/* Palm canopies */}
+      <instancedMesh ref={palmCanopyRef} args={[undefined, undefined, PALM_COUNT]} castShadow>
+        <sphereGeometry args={[1.5, 7, 7]} />
+        <meshStandardMaterial color="#1a5c2a" roughness={0.88} metalness={0} />
+      </instancedMesh>
+      {/* Bushes */}
+      <instancedMesh ref={bushRef} args={[undefined, undefined, BUSH_COUNT]} castShadow>
+        <sphereGeometry args={[1.2, 7, 6]} />
+        <meshStandardMaterial color="#2a6b20" roughness={0.9} metalness={0} />
+      </instancedMesh>
+      {/* Fallen logs */}
+      <instancedMesh ref={logRef} args={[undefined, undefined, LOG_COUNT]} castShadow>
+        <cylinderGeometry args={[0.12, 0.22, 8, 7]} />
+        <meshStandardMaterial color="#1a0d05" roughness={0.98} metalness={0} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+const WATER_VERT = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const WATER_FRAG = `
+uniform float uTime;
+varying vec2 vUv;
+void main() {
+  float ripple = sin(vUv.x * 10.0 + uTime * 2.5) * 0.04 + sin(vUv.y * 8.0 + uTime * 1.8) * 0.03;
+  vec3 c = vec3(0.165, 0.498, 0.678) + ripple * 0.3;
+  gl_FragColor = vec4(c, 0.78);
+}
+`;
+
+const ROCK_COUNT = 30;
+const LILY_COUNT = 15;
+
+function JungleStream() {
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+  const rockRef = useRef<THREE.InstancedMesh>(null);
+  const lilyRef = useRef<THREE.InstancedMesh>(null);
+
+  const streamGeo = useMemo(() => {
+    const pts = STREAM_CURVE.getPoints(120);
+    const vertexCount = pts.length * 2;
+    const positions = new Float32Array(vertexCount * 3);
+    const normals   = new Float32Array(vertexCount * 3);
+    const uvs       = new Float32Array(vertexCount * 2);
+    const indices: number[] = [];
+
+    for (let i = 0; i < pts.length; i++) {
+      const curr = pts[i];
+      const next = pts[Math.min(i + 1, pts.length - 1)];
+      const prev = pts[Math.max(i - 1, 0)];
+      const dir = new THREE.Vector3().subVectors(next, prev).normalize();
+      const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize().multiplyScalar(1.8);
+
+      const left  = new THREE.Vector3().copy(curr).sub(perp);
+      const right = new THREE.Vector3().copy(curr).add(perp);
+      const v = i / (pts.length - 1);
+
+      const li = i * 2;
+      const ri = i * 2 + 1;
+
+      positions[li * 3]     = left.x;
+      positions[li * 3 + 1] = left.y;
+      positions[li * 3 + 2] = left.z;
+      positions[ri * 3]     = right.x;
+      positions[ri * 3 + 1] = right.y;
+      positions[ri * 3 + 2] = right.z;
+
+      normals[li * 3 + 1] = 1;
+      normals[ri * 3 + 1] = 1;
+
+      uvs[li * 2]     = 0;
+      uvs[li * 2 + 1] = v;
+      uvs[ri * 2]     = 1;
+      uvs[ri * 2 + 1] = v;
+
+      if (i < pts.length - 1) {
+        const a = li, b = ri, c = li + 2, d = ri + 2;
+        indices.push(a, b, c, b, d, c);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
+    geo.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    return geo;
+  }, []);
+
+  useEffect(() => {
+    const rock = rockRef.current;
+    const lily = lilyRef.current;
+    if (!rock || !lily) return;
+
+    const matrix = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    const rand = seededRandom(66);
+    const streamPts = STREAM_CURVE.getPoints(120);
+
+    for (let i = 0; i < ROCK_COUNT; i++) {
+      const pt = streamPts[Math.floor(rand() * streamPts.length)];
+      const side = rand() > 0.5 ? 1 : -1;
+      pos.set(pt.x + side * (2 + rand() * 1.5), 0.2, pt.z + (rand() - 0.5) * 2);
+      quat.setFromEuler(new THREE.Euler(rand() * 0.5, rand() * Math.PI * 2, rand() * 0.5));
+      const s = 0.3 + rand() * 0.5;
+      scl.set(s, s * 0.6, s);
+      matrix.compose(pos, quat, scl);
+      rock.setMatrixAt(i, matrix);
+    }
+
+    for (let i = 0; i < LILY_COUNT; i++) {
+      const pt = streamPts[Math.floor(rand() * streamPts.length)];
+      pos.set(pt.x + (rand() - 0.5) * 2, 0.07, pt.z + (rand() - 0.5) * 2);
+      quat.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, rand() * Math.PI * 2));
+      scl.set(1, 1, 1);
+      matrix.compose(pos, quat, scl);
+      lily.setMatrixAt(i, matrix);
+    }
+
+    rock.instanceMatrix.needsUpdate = true;
+    lily.instanceMatrix.needsUpdate = true;
+  }, []);
+
+  useFrame((_, dt) => {
+    if (matRef.current) {
+      matRef.current.uniforms.uTime.value += dt;
+    }
+  });
+
+  return (
+    <group>
+      {/* Water ribbon */}
+      <mesh geometry={streamGeo}>
+        <shaderMaterial
+          ref={matRef}
+          vertexShader={WATER_VERT}
+          fragmentShader={WATER_FRAG}
+          uniforms={{ uTime: { value: 0 } }}
+          transparent
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {/* Rocks along banks */}
+      <instancedMesh ref={rockRef} args={[undefined, undefined, ROCK_COUNT]} castShadow>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#5a4a3a" roughness={0.9} metalness={0.05} />
+      </instancedMesh>
+      {/* Lily pads */}
+      <instancedMesh ref={lilyRef} args={[undefined, undefined, LILY_COUNT]}>
+        <circleGeometry args={[0.4, 8]} />
+        <meshStandardMaterial color="#2d6e2d" roughness={0.8} metalness={0} side={THREE.DoubleSide} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+const LEAF_COUNT = 200;
+
+function JungleLeaves() {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+
+    const rand = seededRandom(99);
+    const matrix = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+
+    for (let i = 0; i < LEAF_COUNT; i++) {
+      const angle = rand() * Math.PI * 2;
+      const r = 22 + rand() * 63;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      pos.set(x, 0.05, z);
+      quat.setFromEuler(new THREE.Euler(
+        (rand() - 0.5) * THREE.MathUtils.degToRad(70),
+        rand() * Math.PI * 2,
+        (rand() - 0.5) * THREE.MathUtils.degToRad(70),
+      ));
+      const s = 0.7 + rand() * 0.6;
+      scl.set(s, s, s);
+      matrix.compose(pos, quat, scl);
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+  }, []);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, LEAF_COUNT]}>
+      <planeGeometry args={[0.8, 2]} />
+      <meshStandardMaterial color="#2a6b1a" roughness={0.9} metalness={0} side={THREE.DoubleSide} />
+    </instancedMesh>
+  );
+}
+
+const DUST_COUNT = 500;
+
+function JungleDust() {
+  const geoRef = useRef<THREE.BufferGeometry>(null);
+  const positionsRef = useRef<Float32Array | null>(null);
+  const driftRef = useRef<Float32Array | null>(null);
+
+  useEffect(() => {
+    const rand = seededRandom(33);
+    const positions = new Float32Array(DUST_COUNT * 3);
+    const drift = new Float32Array(DUST_COUNT * 3);
+    for (let i = 0; i < DUST_COUNT; i++) {
+      positions[i * 3]     = (rand() - 0.5) * 240;
+      positions[i * 3 + 1] = rand() * 5;
+      positions[i * 3 + 2] = (rand() - 0.5) * 240;
+      drift[i * 3]     = (rand() - 0.5) * 0.006;
+      drift[i * 3 + 1] = (rand() - 0.5) * 0.003;
+      drift[i * 3 + 2] = (rand() - 0.5) * 0.006;
+    }
+    positionsRef.current = positions;
+    driftRef.current = drift;
+    if (geoRef.current) {
+      geoRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    }
+  }, []);
+
+  useFrame(() => {
+    const geo = geoRef.current;
+    const positions = positionsRef.current;
+    const drift = driftRef.current;
+    if (!geo || !positions || !drift) return;
+
+    for (let i = 0; i < DUST_COUNT; i++) {
+      positions[i * 3]     += drift[i * 3];
+      positions[i * 3 + 1] += drift[i * 3 + 1];
+      positions[i * 3 + 2] += drift[i * 3 + 2];
+
+      if (positions[i * 3]     >  120) positions[i * 3]     = -120;
+      if (positions[i * 3]     < -120) positions[i * 3]     =  120;
+      if (positions[i * 3 + 1] >    5) positions[i * 3 + 1] =  0;
+      if (positions[i * 3 + 1] <    0) positions[i * 3 + 1] =  5;
+      if (positions[i * 3 + 2] >  120) positions[i * 3 + 2] = -120;
+      if (positions[i * 3 + 2] < -120) positions[i * 3 + 2] =  120;
+    }
+
+    const attr = geo.getAttribute('position') as THREE.BufferAttribute;
+    attr.needsUpdate = true;
+  });
+
+  return (
+    <points>
+      <bufferGeometry ref={geoRef} />
+      <pointsMaterial size={0.06} color="#fffde7" transparent opacity={0.6} depthWrite={false} />
+    </points>
+  );
+}
+
+function ForestWall() {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const silhouetteTex = useMemo(() => createTreeSilhouetteMap(), []);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const rand = seededRandom(200);
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    for (let i = 0; i < WALL_COUNT; i++) {
+      const angle = (i / WALL_COUNT) * Math.PI * 2 + (rand() - 0.5) * 0.15;
+      const r = 90 + rand() * 25;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      const h = 14 + rand() * 8;
+      const w = 18 + rand() * 10;
+      // Build rotation, apply scale, then set translation directly
+      matrix.makeRotationY(angle + Math.PI);
+      matrix.scale(new THREE.Vector3(w, h, 1));
+      matrix.setPosition(x, h / 2, z);
+      mesh.setMatrixAt(i, matrix);
+      color.setStyle(FOLIAGE_COLORS[i % FOLIAGE_COLORS.length]);
+      mesh.setColorAt(i, color);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, []);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, WALL_COUNT]} castShadow={false}>
+      <planeGeometry args={[1, 1]} />
+      <meshStandardMaterial
+        map={silhouetteTex}
+        alphaMap={silhouetteTex}
+        alphaTest={0.2}
+        vertexColors
+        roughness={1}
+        metalness={0}
+        side={THREE.DoubleSide}
+      />
+    </instancedMesh>
   );
 }
 
@@ -194,13 +865,13 @@ function ArcadeEnvironment() {
 
   return (
     <group>
-      {/* Ground plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[500, 500]} />
-        <meshStandardMaterial color={FOREST_GROUND_COLOR} roughness={0.96} metalness={0.04} />
-      </mesh>
-
-      <ForestTrees />
+      <JungleGround />
+      <JungleGrass />
+      <JungleTrees />
+      <JungleStream />
+      <JungleLeaves />
+      <JungleDust />
+      <ForestWall />
     </group>
   );
 }
@@ -1380,6 +2051,7 @@ function ArcadeSceneImpl({
     <>
       <ForestAudio />
       <Canvas
+        shadows="soft"
         camera={{ position: [0, 18, 10], fov: 42 }}
         gl={{ antialias: true, powerPreference: 'high-performance', localClippingEnabled: true }}
         style={{
@@ -1399,9 +2071,17 @@ function ArcadeSceneImpl({
           mieCoefficient={0.003}
           mieDirectionalG={0.92}
         />
-        <directionalLight intensity={2.2} position={SUN_POSITION} color="#FFF5E0" castShadow={false} />
-        <directionalLight intensity={0.55} position={[-20, 30, 20]} color="#A8C8E8" />
-        <ambientLight intensity={0.45} color="#C8E0B0" />
+        <ambientLight intensity={0.35} color="#d4ead8" />
+        <directionalLight
+          intensity={2.5} position={SUN_POSITION} color="#fffbe6"
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-near={0.5} shadow-camera-far={200}
+          shadow-camera-left={-80} shadow-camera-right={80}
+          shadow-camera-top={80} shadow-camera-bottom={-80}
+          shadow-bias={-0.0005}
+        />
+        <hemisphereLight args={['#a8d8ea', '#4a7c59', 0.8]} />
 
         <Suspense fallback={<LoadingFallback />}>
           <ArcadeEnvironment />
