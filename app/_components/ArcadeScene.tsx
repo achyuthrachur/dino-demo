@@ -835,20 +835,33 @@ function RexyArcadeModel({
 
     const activeAction = currentActionRef.current;
 
-    // Per-frame enforcement: if the walk action is present but stuck in
-    // LoopOnce/clamped/paused state, fix it directly here before the
-    // isRunning() check so we don't trigger an unnecessary full restart.
+    // Per-frame enforcement: keep the walk action alive while the joystick is held.
+    // Three.js sets enabled=false (clampWhenFinished=false+LoopOnce) or paused=true
+    // (clampWhenFinished=true) when a LoopOnce clip finishes. Catch both cases and
+    // immediately re-activate so the animation restarts without going through the
+    // full startWalkCycle crossFade path (which would play the whole spawn sequence
+    // again from the beginning each time instead of looping).
     if (activeAction && activeAction.getClip().name === walkClipName && walkCycleActiveRef.current) {
+      // Always enforce LoopRepeat
       if (activeAction.loop !== THREE.LoopRepeat || activeAction.repetitions !== Infinity) {
         activeAction.setLoop(THREE.LoopRepeat, Infinity);
       }
-      if (activeAction.clampWhenFinished) {
-        activeAction.clampWhenFinished = false;
-      }
+      activeAction.clampWhenFinished = false;
+
+      // Un-pause (clampWhenFinished=true path)
       if (activeAction.paused) {
         activeAction.paused = false;
         const dur = activeAction.getClip().duration;
         if (dur > 0) activeAction.time = activeAction.time % dur;
+      }
+
+      // Re-enable and re-activate (clampWhenFinished=false path: enabled→false)
+      if (!activeAction.enabled) {
+        activeAction.enabled = true;
+        activeAction.time = 0;
+      }
+      if (!activeAction.isScheduled()) {
+        activeAction.play();
       }
     }
 
