@@ -43,6 +43,9 @@ const CAMERA_MAX_YAW_STEP_RADIANS = THREE.MathUtils.degToRad(8);
 const CAMERA_MAX_PITCH_STEP_RADIANS = THREE.MathUtils.degToRad(6);
 const LOCOMOTION_MIN_TIME_SCALE = 1.0;
 const LOCOMOTION_MAX_TIME_SCALE = 1.0;
+// Fraction of the minionSpawn clip to use as the walk loop (cuts the stand phase at the end).
+// 0.70 = first 70% of frames (walk + roar), discarding the final stand portion.
+const MINION_SPAWN_WALK_END_RATIO = 0.70;
 
 const FOREST_FOG_COLOR       = 0xb9d4c6;
 const FOREST_FOG_DENSITY     = 0.008;
@@ -93,6 +96,7 @@ interface LocomotionState {
 
 interface ClipSet {
   minionSpawn: string | null;
+  minionSpawnWalkLoop: string | null;
   nextRound: string | null;
   playerSpawn: string | null;
   spawn: string | null;
@@ -313,6 +317,10 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
         !normalized.includes('player') &&
         normalized.includes('walkloop')),
   );
+  const minionSpawnWalkLoop = pickClip(
+    animations,
+    (normalized) => normalized.includes('raidminionspawn') && normalized.includes('walkroarloop'),
+  );
   const victoryIn = pickClip(animations, (normalized) => normalized.includes('raidvictoryin'));
   const victoryOut = pickClip(animations, (normalized) => normalized.includes('raidvictoryout'));
   const victoryIdle = pickClip(animations, (normalized) => normalized.includes('raidvictoryidle'));
@@ -327,6 +335,7 @@ function buildClipSet(animations: THREE.AnimationClip[]): ClipSet {
 
   return {
     minionSpawn,
+    minionSpawnWalkLoop,
     nextRound,
     playerSpawn,
     spawn,
@@ -546,6 +555,23 @@ function createSpawnWalkLoopClip(baseClip: THREE.AnimationClip): THREE.Animation
   return fallback;
 }
 
+// Create a subclip of the minionSpawn animation covering only the walk+roar
+// portion (frames 0 → MINION_SPAWN_WALK_END_RATIO). This lets the walk loop
+// omit the long stand-still phase at the end of the full spawn sequence.
+function createMinionSpawnWalkRoarLoop(baseClip: THREE.AnimationClip): THREE.AnimationClip | null {
+  const fps = estimateClipFps(baseClip);
+  const totalFrames = Math.max(3, Math.round(baseClip.duration * fps));
+  const endFrame = Math.max(2, Math.floor(totalFrames * MINION_SPAWN_WALK_END_RATIO));
+  const clipName = `${baseClip.name}__walk_roar_loop`;
+  const loopClip = THREE.AnimationUtils.subclip(baseClip, clipName, 0, endFrame, fps);
+  if (loopClip && loopClip.duration > 0.1) {
+    loopClip.resetDuration();
+    loopClip.optimize();
+    return loopClip;
+  }
+  return null;
+}
+
 function prepareAnimationsForArcade(
   animations: THREE.AnimationClip[],
   restPositionsByNodeName: Map<string, THREE.Vector3>,
@@ -607,6 +633,15 @@ function prepareAnimationsForArcade(
       const walkLoopClip = createSpawnWalkLoopClip(cloned);
       if (walkLoopClip) {
         prepared.push(walkLoopClip);
+      }
+    }
+
+    // For the minionSpawn clip, also create a walk+roar subclip that omits the
+    // long stand-still phase at the end so the walk loop is walk→roar→walk→roar.
+    if (normalized.includes('raidminionspawn')) {
+      const walkRoarClip = createMinionSpawnWalkRoarLoop(cloned);
+      if (walkRoarClip) {
+        prepared.push(walkRoarClip);
       }
     }
   }
@@ -763,6 +798,7 @@ function RexyArcadeModel({
       // missingOrWrongAction stays true every frame → infinite silent retry →
       // locomotion moves the actor while no animation plays (visible slide).
       for (const name of [
+        activeClipSet.minionSpawnWalkLoop,
         activeClipSet.minionSpawn,
         activeClipSet.spawnWalkLoop,
         activeClipSet.spawn,
@@ -835,32 +871,19 @@ function RexyArcadeModel({
 
     const activeAction = currentActionRef.current;
 
-    // Per-frame enforcement: keep the walk action alive while the joystick is held.
-    // Three.js sets enabled=false (clampWhenFinished=false+LoopOnce) or paused=true
-    // (clampWhenFinished=true) when a LoopOnce clip finishes. Catch both cases and
-    // immediately re-activate so the animation restarts without going through the
-    // full startWalkCycle crossFade path (which would play the whole spawn sequence
-    // again from the beginning each time instead of looping).
+    // Per-frame enforcement: if the walk action has ended (enabled=false when
+    // clampWhenFinished=false, or paused=true when clampWhenFinished=true), do a
+    // full stop→setLoop→play restart. stop() calls reset() internally which sets
+    // _loopCount=-1 and _startTime=null — without this, _setEndings() is never
+    // re-called for the new loop iteration and the tracks use LoopOnce boundary
+    // settings, causing the animation to visually slide/freeze at the wrap point.
     if (activeAction && activeAction.getClip().name === walkClipName && walkCycleActiveRef.current) {
-      // Always enforce LoopRepeat
-      if (activeAction.loop !== THREE.LoopRepeat || activeAction.repetitions !== Infinity) {
+      if (!activeAction.enabled || activeAction.paused) {
+        activeAction.stop();
         activeAction.setLoop(THREE.LoopRepeat, Infinity);
-      }
-      activeAction.clampWhenFinished = false;
-
-      // Un-pause (clampWhenFinished=true path)
-      if (activeAction.paused) {
-        activeAction.paused = false;
-        const dur = activeAction.getClip().duration;
-        if (dur > 0) activeAction.time = activeAction.time % dur;
-      }
-
-      // Re-enable and re-activate (clampWhenFinished=false path: enabled→false)
-      if (!activeAction.enabled) {
-        activeAction.enabled = true;
-        activeAction.time = 0;
-      }
-      if (!activeAction.isScheduled()) {
+        activeAction.clampWhenFinished = false;
+        activeAction.setEffectiveWeight(1);
+        activeAction.setEffectiveTimeScale(1);
         activeAction.play();
       }
     }
